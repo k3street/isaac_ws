@@ -1,0 +1,220 @@
+# Isaac Sim + ROS2 Camera Node - .gitignore
+
+# ===== PYTHON =====
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== ISAAC SIM =====
+# Isaac Sim cache and temporary files
+*.cache
+*.usd_cache/
+*.tmp
+omni_cache/
+.isaac_sim_cache/
+
+# Isaac Sim logs
+isaac_sim.log
+isaac_sim_*.log
+omni*.log
+kit*.log
+
+# Isaac Sim configuration
+.nvidia/
+.isaac_sim/
+
+# Render outputs and captures
+renders/
+captures/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.exr
+*.hdr
+
+# USD files (if temporary/generated)
+temp*.usd
+output*.usd
+
+# ===== ROS2 =====
+# Build artifacts
+build/
+install/
+log/
+devel/
+
+# ROS bag files
+*.bag
+*.db3
+
+# ROS parameter files (if containing sensitive info)
+# params/private/
+
+# ===== LOGS & DEBUGGING =====
+# Application logs
+*.log
+*.out
+*.err
+debug.txt
+output.txt
+test_output.log
+
+# Core dumps
+core
+core.*
+
+# Debugging files
+gdb.txt
+valgrind.out
+
+# ===== SYSTEM FILES =====
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.nfs*
+
+# ===== EDITORS & IDEs =====
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===== BACKUP & TEMPORARY FILES =====
+# Backup files
+*.bak
+*.backup
+*.old
+*_backup
+*_old
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# ===== PROJECT SPECIFIC =====
+# Personal configuration files
+config.local
+settings.local
+
+# Test artifacts
+test_results/
+test_*.txt
+
+# Performance profiling
+*.prof
+*.profile
+
+# Documentation builds
+docs/_build/
+docs/build/
+
+# ===== SENSITIVE DATA =====
+# Environment files with secrets
+.env.local
+.env.production
+secrets.txt
+credentials.json
+
+# Personal notes that shouldn't be public
+PRIVATE.md
+TODO_private.md
+notes.txt
