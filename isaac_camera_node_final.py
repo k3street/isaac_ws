@@ -11,7 +11,7 @@ import math
 import random
 
 from isaacsim.simulation_app import SimulationApp
-CONFIG = {"renderer": "RaytracedLighting", "headless": True}
+CONFIG = {"renderer": "RaytracedLighting", "headless": False}  # Enable GUI for visualization
 simulation_app = SimulationApp(CONFIG)
 
 # Standard imports after simulation app
@@ -310,7 +310,7 @@ class FinalCameraNode:
                     look_yaw = self.current_yaw + 180  # Face inward toward origin
                     xform_api.SetRotate((0, look_yaw, 0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
                     
-                    print(f"Camera rotated: Yaw={self.current_yaw:.1f}° | Position=({new_x:.2f}, {height:.2f}, {new_z:.2f})")
+                    print(f"🔄 Camera rotated: Yaw={self.current_yaw:.1f}° | Position=({new_x:.2f}, {height:.2f}, {new_z:.2f}) | Looking at origin")
                     
                 except Exception as e:
                     print(f"Warning: Failed to rotate camera: {e}")
