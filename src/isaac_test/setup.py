@@ -15,11 +15,12 @@ setup(
     zip_safe=True,
     maintainer='kimate',
     maintainer_email='kimate@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Isaac Sim Camera Data Subscriber and Processor',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'camera_subscriber = isaac_test.camera_subscriber:main',
         ],
     },
 )
