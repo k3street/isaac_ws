@@ -1,5 +1,10 @@
 # Isaac Sim 5.0 + ROS2 Jazzy Camera Node - ✅ COMPLETED
 
+## 🎥 Demo Video
+[![Isaac Sim Camera Node Demo](https://img.youtube.com/vi/bT7uk9ZliIE/0.jpg)](https://youtu.be/bT7uk9ZliIE)
+
+*Click the image above to watch the complete Isaac Sim → ROS2 camera pipeline in action*
+
 This project implements a **fully functional** camera node for Isaac Sim 5.0 with ROS2 Jazzy integration.
 
 ## ✅ SOLUTION COMPLETE
