@@ -7,6 +7,8 @@ import sys
 import signal
 import time
 import traceback
+import math
+import random
 
 from isaacsim.simulation_app import SimulationApp
 CONFIG = {"renderer": "RaytracedLighting", "headless": True}
@@ -28,6 +30,8 @@ class FinalCameraNode:
         self.camera_prim = None
         self.ros_camera_graph = None
         self.shutdown_requested = False
+        self.last_rotation_time = 0
+        self.current_yaw = 0.0  # Current camera yaw rotation
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -62,6 +66,31 @@ class FinalCameraNode:
             # Load simple room environment
             environment_path = assets_root_path + "/Isaac/Environments/Simple_Room/simple_room.usd"
             stage.add_reference_to_stage(usd_path=environment_path, prim_path="/World/simple_room")
+            
+            # Add some interesting objects to view
+            # Add a cube at origin
+            from omni.isaac.core.utils.stage import add_reference_to_stage
+            try:
+                cube_path = assets_root_path + "/Isaac/Props/Blocks/basic_block.usd"
+                add_reference_to_stage(usd_path=cube_path, prim_path="/World/Cube1")
+                
+                # Position cubes around the scene
+                cube_prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/Cube1")
+                if cube_prim:
+                    xform_api = UsdGeom.XformCommonAPI(cube_prim)
+                    xform_api.SetTranslate(Gf.Vec3d(0, 0, 0.5))
+                    xform_api.SetScale(Gf.Vec3f(0.5, 0.5, 0.5))
+                    
+                # Add another cube
+                add_reference_to_stage(usd_path=cube_path, prim_path="/World/Cube2")
+                cube2_prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/Cube2")
+                if cube2_prim:
+                    xform_api = UsdGeom.XformCommonAPI(cube2_prim)
+                    xform_api.SetTranslate(Gf.Vec3d(1.5, 0, 0.3))
+                    xform_api.SetScale(Gf.Vec3f(0.3, 0.3, 0.6))
+                    
+            except Exception as e:
+                print(f"Note: Could not add props (continuing anyway): {e}")
             
             # Add lighting
             sphereLight = UsdLux.SphereLight.Define(omni.usd.get_context().get_stage(), "/World/SphereLight")
@@ -185,10 +214,14 @@ class FinalCameraNode:
             print("  - /camera/camera_info (sensor_msgs/CameraInfo)")
             print("  - /camera/depth (sensor_msgs/Image)")
             print("  - /clock (rosgraph_msgs/Clock)")
+            print("🔄 Camera will rotate randomly 360° every second")
             print("Press Ctrl+C to stop\n")
             
             while not self.shutdown_requested:
                 try:
+                    # Rotate camera randomly every second
+                    self.rotate_camera_randomly()
+                    
                     # Step simulation with rendering
                     self.simulation_context.step(render=True)
                     simulation_app.update()
@@ -199,7 +232,7 @@ class FinalCameraNode:
                     if step_count % 100 == 0:
                         elapsed = time.time() - start_time
                         fps = step_count / elapsed if elapsed > 0 else 0
-                        print(f"Step {step_count:5d} | Elapsed: {elapsed:6.1f}s | FPS: {fps:5.1f} | Status: OK")
+                        print(f"Step {step_count:5d} | Elapsed: {elapsed:6.1f}s | FPS: {fps:5.1f} | Yaw: {self.current_yaw:6.1f}°")
                         
                     # Limit FPS 
                     time.sleep(0.016)  # ~60 FPS
@@ -243,6 +276,45 @@ class FinalCameraNode:
         except Exception as e:
             print(f"Warning: Error during cleanup: {e}")
             
+    def rotate_camera_randomly(self):
+        """Rotate camera randomly around Y-axis (yaw) every second"""
+        current_time = time.time()
+        
+        # Rotate every 1 second
+        if current_time - self.last_rotation_time >= 1.0:
+            self.last_rotation_time = current_time
+            
+            # Generate random yaw rotation (0-360 degrees)
+            self.current_yaw = random.uniform(0, 360)
+            
+            if self.camera_prim:
+                try:
+                    # Get the camera's transform API
+                    xform_api = UsdGeom.XformCommonAPI(self.camera_prim)
+                    
+                    # Keep camera at same position but rotate around Y-axis
+                    # Camera positioned at (2, 2, 2) looking at origin with random yaw
+                    radius = 2.83  # Distance from origin (sqrt(2^2 + 2^2))
+                    height = 2.0   # Keep same height
+                    
+                    # Calculate new position based on yaw rotation
+                    yaw_rad = math.radians(self.current_yaw)
+                    new_x = radius * math.cos(yaw_rad)
+                    new_z = radius * math.sin(yaw_rad)
+                    
+                    # Set new position and rotation
+                    xform_api.SetTranslate(Gf.Vec3d(new_x, height, new_z))
+                    
+                    # Calculate rotation to look at origin
+                    # Yaw rotation to face center + 90 degree offset
+                    look_yaw = self.current_yaw + 180  # Face inward toward origin
+                    xform_api.SetRotate((0, look_yaw, 0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+                    
+                    print(f"Camera rotated: Yaw={self.current_yaw:.1f}° | Position=({new_x:.2f}, {height:.2f}, {new_z:.2f})")
+                    
+                except Exception as e:
+                    print(f"Warning: Failed to rotate camera: {e}")
+                    
     def run(self):
         """Main execution method"""
         print("=== Isaac Sim 5.0 ROS2 Camera Node - Final Working Version ===")
