@@ -33,9 +33,9 @@ class MovableCameraNode:
         self.ros_camera_graph = None
         self.shutdown_requested = False
         
-        # Camera movement state
-        self.camera_position = [2.0, 2.0, 2.0]  # x, y, z
-        self.camera_rotation = [0.0, 0.0, 0.0]  # euler angles in degrees
+        # Camera movement state (positioned for room environment)
+        self.camera_position = [0.0, 3.0, 1.5]  # x, y, z - positioned near front of room looking in
+        self.camera_rotation = [0.0, 0.0, 180.0]  # euler angles in degrees - rotated to look into room
         
         # Command file for movement
         self.command_file = Path("/tmp/isaac_camera_commands.json")
@@ -65,34 +65,97 @@ class MovableCameraNode:
                 backend="torch"
             )
             
-            # Add environment objects for reference
+            # Load a basic room scene
             stage_context = omni.usd.get_context()
             stage = stage_context.get_stage()
             
-            # Create ground plane
-            plane_prim = UsdGeom.Plane.Define(stage, "/World/GroundPlane")
-            plane_geom = UsdGeom.Plane(plane_prim)
-            plane_geom.CreateAxisAttr().Set("Y")
+            # Try to load Isaac Sim assets first, fallback to basic room if not available
+            assets_root_path = get_assets_root_path()
+            print(f"Isaac Sim assets path: {assets_root_path}")
             
-            # Set ground size and position
-            xform_api = UsdGeom.XformCommonAPI(plane_prim)
-            xform_api.SetTranslate(Gf.Vec3d(0, 0, 0))
-            xform_api.SetScale(Gf.Vec3f(10.0, 1.0, 10.0))
+            # Try different room asset paths
+            room_asset_paths = [
+                f"{assets_root_path}/Isaac/Environments/Simple_Room/simple_room.usd",
+                f"{assets_root_path}/Isaac/Environments/Office/office.usd", 
+                f"{assets_root_path}/Isaac/Environments/Simple_Warehouse/warehouse.usd",
+                f"{assets_root_path}/Isaac/Environments/Grid_Room/gridroom_curved.usd"
+            ]
             
-            # Create some reference cubes
-            for i in range(3):
-                cube_prim = UsdGeom.Cube.Define(stage, f"/World/Cube{i+1}")
-                xform_api = UsdGeom.XformCommonAPI(cube_prim)
-                xform_api.SetTranslate(Gf.Vec3d(i*2, 0, 0.5))
+            room_loaded = False
+            for room_path in room_asset_paths:
+                try:
+                    print(f"Trying to load room: {room_path}")
+                    
+                    # Create reference to the room asset
+                    room_prim = stage.DefinePrim("/World/Room", "Xform")
+                    room_prim.GetReferences().AddReference(room_path)
+                    
+                    # Set room transform
+                    xform_api = UsdGeom.XformCommonAPI(room_prim)
+                    xform_api.SetTranslate(Gf.Vec3d(0, 0, 0))
+                    xform_api.SetScale(Gf.Vec3f(1.0, 1.0, 1.0))
+                    
+                    print(f"✓ Successfully loaded room: {room_path}")
+                    room_loaded = True
+                    break
+                    
+                except Exception as e:
+                    print(f"Failed to load {room_path}: {e}")
+                    continue
+            
+            # If no room assets found, create a basic room manually
+            if not room_loaded:
+                print("Creating basic room manually...")
                 
-            # Add lighting
-            light_prim = UsdLux.DistantLight.Define(stage, "/World/DistantLight")
-            light = UsdLux.DistantLight(light_prim)
-            light.CreateIntensityAttr(3000)
+                # Floor
+                floor_prim = UsdGeom.Cube.Define(stage, "/World/Room/Floor")
+                xform_api = UsdGeom.XformCommonAPI(floor_prim)
+                xform_api.SetTranslate(Gf.Vec3d(0, 0, -0.1))
+                xform_api.SetScale(Gf.Vec3f(10.0, 10.0, 0.2))
+                
+                # Walls
+                for i, (pos, scale) in enumerate([
+                    ((-5, 0, 2), (0.2, 10, 4)),  # Left wall
+                    ((5, 0, 2), (0.2, 10, 4)),   # Right wall  
+                    ((0, -5, 2), (10, 0.2, 4)),  # Back wall
+                    ((0, 5, 2), (10, 0.2, 4))    # Front wall
+                ]):
+                    wall_prim = UsdGeom.Cube.Define(stage, f"/World/Room/Wall_{i}")
+                    xform_api = UsdGeom.XformCommonAPI(wall_prim)
+                    xform_api.SetTranslate(Gf.Vec3d(pos[0], pos[1], pos[2]))
+                    xform_api.SetScale(Gf.Vec3f(scale[0], scale[1], scale[2]))
+                
+                # Add some furniture
+                # Table
+                table_prim = UsdGeom.Cube.Define(stage, "/World/Room/Table")
+                xform_api = UsdGeom.XformCommonAPI(table_prim)
+                xform_api.SetTranslate(Gf.Vec3d(2, 0, 0.75))
+                xform_api.SetScale(Gf.Vec3f(2.0, 1.0, 0.1))
+                
+                # Chair
+                chair_prim = UsdGeom.Cube.Define(stage, "/World/Room/Chair")
+                xform_api = UsdGeom.XformCommonAPI(chair_prim)
+                xform_api.SetTranslate(Gf.Vec3d(1, 0, 0.5))
+                xform_api.SetScale(Gf.Vec3f(0.5, 0.5, 1.0))
+                
+                print("✓ Basic room created manually")
             
-            xform_api = UsdGeom.XformCommonAPI(light_prim)
-            xform_api.SetTranslate(Gf.Vec3d(0, 0, 0.5))
-            xform_api.SetRotate(Gf.Vec3f(1.5, 0, 0))
+            # Add lighting appropriate for indoor environment
+            # Main ceiling light
+            ceiling_light = UsdLux.RectLight.Define(stage, "/World/Room/CeilingLight")
+            ceiling_light.CreateIntensityAttr(2000)
+            ceiling_light.CreateWidthAttr(3.0)
+            ceiling_light.CreateHeightAttr(3.0)
+            
+            xform_api = UsdGeom.XformCommonAPI(ceiling_light)
+            xform_api.SetTranslate(Gf.Vec3d(0, 0, 3.8))
+            xform_api.SetRotate(Gf.Vec3f(180, 0, 0))
+            
+            # Ambient light
+            ambient_light = UsdLux.DomeLight.Define(stage, "/World/Room/AmbientLight")
+            ambient_light.CreateIntensityAttr(500)
+            
+            print("✓ Room lighting setup complete")
             
             simulation_app.update()
             print("✓ Isaac Sim initialized successfully")
@@ -128,7 +191,7 @@ class MovableCameraNode:
             
             simulation_app.update()
             
-            # Create ROS camera graph (exact copy from working version)
+            # Create ROS camera graph (using working settings from isaac_camera_node_final.py)
             keys = og.Controller.Keys
             (self.ros_camera_graph, _, _, _) = og.Controller.edit(
                 {
@@ -287,10 +350,8 @@ class MovableCameraNode:
                 if self.simulation_context:
                     self.simulation_context.step(render=True)
                 
-                # Update ROS2 publishers periodically
-                if frame_count % 10 == 0:  # Every 10 frames
-                    if self.ros_camera_graph:
-                        og.Controller.evaluate_sync(self.ros_camera_graph)
+                # The OnTick node in the OmniGraph automatically handles ROS2 publishing
+                # No need to manually evaluate the graph every frame
                 
                 simulation_app.update()
                 frame_count += 1
