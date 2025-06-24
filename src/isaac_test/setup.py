@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'camera_subscriber = isaac_test.camera_subscriber:main',
+            'camera_controller = isaac_test.camera_controller:main',
         ],
     },
 )

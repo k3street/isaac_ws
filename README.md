@@ -55,8 +55,52 @@ ros2 topic list
 ros2 topic echo /camera/camera_info
 ```
 
+### Camera Controller Demo
+The project includes both a **controllable Isaac Sim camera** and a **ROS2 camera controller node**:
+
+#### 1. Controllable Isaac Sim Camera (`isaac_camera_controllable.py`)
+Real-time camera control directly in Isaac Sim via ROS2 topics:
+
+```bash
+# Launch the controllable camera in Isaac Sim
+./launch_camera_controller.sh
+
+# Control camera movement (in another terminal)
+# Move forward at 0.5 m/s
+ros2 topic pub /camera/cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.5}}'
+
+# Rotate camera (yaw) at 0.2 rad/s
+ros2 topic pub /camera/cmd_vel geometry_msgs/msg/Twist '{angular: {z: 0.2}}'
+
+# Set absolute position
+ros2 topic pub /camera/set_pose geometry_msgs/msg/PoseStamped '{pose: {position: {x: 5.0, y: 0.0, z: 2.0}}}'
+
+# Change field of view to 90 degrees
+ros2 topic pub /camera/set_fov std_msgs/msg/Float32 '{data: 90.0}'
+
+# Disable/enable camera
+ros2 topic pub /camera/enable std_msgs/msg/Bool '{data: false}'
+```
+
+#### 2. ROS2 Camera Controller Node (`camera_controller.py`)
+Standalone ROS2 node for camera state management and simulation:
+
+```bash
+# Build the ROS2 package
+colcon build --packages-select isaac_test
+
+# Source the workspace
+source install/setup.bash
+
+# Run the standalone controller
+ros2 run isaac_test camera_controller
+
+# Test the controller
+./test_camera_controller.sh
+```
+
 ### Camera Subscriber Demo
-The project includes a complete ROS2 subscriber node that processes camera data from Isaac Sim:
+The project also includes a complete ROS2 subscriber node that processes camera data from Isaac Sim:
 
 ```bash
 # Build the ROS2 package
@@ -109,13 +153,13 @@ source /opt/ros/jazzy/setup.bash
 
 ```
 isaac_ws/
-├── isaac_camera_node_final.py     # ✅ WORKING - Final implementation
-├── run_camera_node_final.sh       # ✅ WORKING - Launcher script  
+├── isaac_camera_node_final.py     # ✅ WORKING - Original camera publisher
+├── isaac_camera_controllable.py   # ✅ NEW - ROS2-controllable camera in Isaac Sim
+├── run_camera_node_final.sh       # ✅ WORKING - Original camera launcher
+├── launch_camera_controller.sh    # ✅ NEW - Controllable camera launcher
 ├── launch_camera_subscriber.sh    # ✅ WORKING - Subscriber launcher
 ├── test_camera_subscriber.sh      # ✅ WORKING - Subscriber test script
-├── isaac_camera_node_robust.py    # 🔄 Previous iteration
-├── run_camera_node_robust.sh      # 🔄 Previous launcher
-├── diagnose_camera_topics.sh      # 🔧 Diagnostic utility
+├── test_camera_controller.sh      # ✅ NEW - Controller test script
 ├── README.md                      # 📖 This documentation
 ├── STATUS.md                      # 📊 Project status log
 └── src/isaac_test/               # 📦 ROS2 package structure
@@ -123,7 +167,8 @@ isaac_ws/
     ├── setup.py                  # ✅ Python package setup
     └── isaac_test/
         ├── __init__.py
-        └── camera_subscriber.py   # ✅ WORKING - Camera data subscriber
+        ├── camera_subscriber.py   # ✅ WORKING - Camera data subscriber
+        └── camera_controller.py   # ✅ NEW - Standalone camera controller node
 ```
 
 ## Success Metrics ✅
@@ -131,10 +176,12 @@ isaac_ws/
 - [x] **No Segmentation Faults**: Node runs indefinitely without crashes
 - [x] **ROS2 Topic Publishing**: All camera topics publish successfully
 - [x] **ROS2 Subscriber Node**: Complete subscriber implementation with image processing
+- [x] **ROS2 Camera Control**: Real-time camera control via ROS2 topics
+- [x] **Controllable Isaac Sim Camera**: Direct camera control in Isaac Sim simulation
 - [x] **Stable Operation**: Runs for extended periods without issues  
 - [x] **Official APIs**: Uses only supported, non-deprecated Isaac Sim APIs
 - [x] **Error Handling**: Graceful shutdown and error recovery
-- [x] **Complete Pipeline**: Full Isaac Sim → ROS2 → Processing pipeline
+- [x] **Complete Pipeline**: Full Isaac Sim → ROS2 → Processing → Control pipeline
 - [x] **Documentation**: Complete usage instructions and troubleshooting
 
 ## Testing the Complete Pipeline
