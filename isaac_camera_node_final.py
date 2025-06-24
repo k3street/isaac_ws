@@ -277,43 +277,9 @@ class FinalCameraNode:
             print(f"Warning: Error during cleanup: {e}")
             
     def rotate_camera_randomly(self):
-        """Rotate camera randomly around Y-axis (yaw) every second"""
-        current_time = time.time()
-        
-        # Rotate every 1 second
-        if current_time - self.last_rotation_time >= 1.0:
-            self.last_rotation_time = current_time
-            
-            # Generate random yaw rotation (0-360 degrees)
-            self.current_yaw = random.uniform(0, 360)
-            
-            if self.camera_prim:
-                try:
-                    # Get the camera's transform API
-                    xform_api = UsdGeom.XformCommonAPI(self.camera_prim)
-                    
-                    # Keep camera at same position but rotate around Y-axis
-                    # Camera positioned at (2, 2, 2) looking at origin with random yaw
-                    radius = 2.83  # Distance from origin (sqrt(2^2 + 2^2))
-                    height = 2.0   # Keep same height
-                    
-                    # Calculate new position based on yaw rotation
-                    yaw_rad = math.radians(self.current_yaw)
-                    new_x = radius * math.cos(yaw_rad)
-                    new_z = radius * math.sin(yaw_rad)
-                    
-                    # Set new position and rotation
-                    xform_api.SetTranslate(Gf.Vec3d(new_x, height, new_z))
-                    
-                    # Calculate rotation to look at origin
-                    # Yaw rotation to face center + 90 degree offset
-                    look_yaw = self.current_yaw + 180  # Face inward toward origin
-                    xform_api.SetRotate((0, look_yaw, 0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
-                    
-                    print(f"🔄 Camera rotated: Yaw={self.current_yaw:.1f}° | Position=({new_x:.2f}, {height:.2f}, {new_z:.2f}) | Looking at origin")
-                    
-                except Exception as e:
-                    print(f"Warning: Failed to rotate camera: {e}")
+        """DISABLED: Camera rotation controlled by ROS2 commands only"""
+        # Automatic rotation disabled - camera controlled by ROS2 topics
+        pass
                     
     def run(self):
         """Main execution method"""
