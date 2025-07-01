@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ROS2 Camera Command Sender
-Receives ROS2 topics and sends movement commands to Isaac Sim via file
+Camera Control Command Sender
+Sends movement commands to Isaac Sim Camera Control Node via file-based interface
 """
 
 import json
@@ -57,7 +57,7 @@ class CameraCommandSender(Node):
             'timestamp': time.time()
         }
         
-        self.send_command([command])
+        self.send_command(command)
         
         # Update estimated position (for status)
         dt = 0.1
@@ -83,28 +83,27 @@ class CameraCommandSender(Node):
             'timestamp': time.time()
         }
         
-        self.send_command([command])
+        self.send_command(command)
         
         # Update tracked position
         self.camera_position = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
         
         self.get_logger().info(f"📤 Position: ({msg.pose.position.x:.2f}, {msg.pose.position.y:.2f}, {msg.pose.position.z:.2f})")
         
-    def send_command(self, commands):
-        """Send commands to Isaac Sim via file"""
+    def send_command(self, command):
+        """Send single command to Isaac Sim via file with improved error handling"""
         try:
-            # If file exists, read existing commands and append
-            existing_commands = []
-            if self.command_file.exists():
-                with open(self.command_file, 'r') as f:
-                    existing_commands = json.load(f)
+            # Rate limiting - don't send commands too frequently
+            current_time = time.time()
+            if hasattr(self, '_last_command_time'):
+                if current_time - self._last_command_time < 0.05:  # 50ms minimum interval
+                    return
+            self._last_command_time = current_time
             
-            # Add new commands
-            all_commands = existing_commands + commands
-            
-            # Write all commands
+            # Use simple direct write since Isaac Sim processes files quickly
             with open(self.command_file, 'w') as f:
-                json.dump(all_commands, f)
+                json.dump(command, f)
+                f.flush()  # Ensure data is written immediately
                 
         except Exception as e:
             self.get_logger().error(f"❌ Failed to send command: {e}")

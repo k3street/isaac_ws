@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Isaac Sim 5.0 ROS2 Camera Node - Final Working Version
+Isaac Sim 5.0 ROS2 Camera Control Node
+Movable camera with ROS2 integration and command-based control
 Based on official Isaac Sim examples and documentation
 """
 import sys
@@ -9,6 +10,8 @@ import time
 import traceback
 import math
 import random
+import json
+from pathlib import Path
 
 from isaacsim.simulation_app import SimulationApp
 CONFIG = {"renderer": "RaytracedLighting", "headless": False}  # Enable GUI for visualization
@@ -24,14 +27,25 @@ from isaacsim.core.utils import extensions, stage
 from isaacsim.storage.native import get_assets_root_path
 from pxr import Gf, UsdGeom, UsdLux
 
-class FinalCameraNode:
+class CameraControlNode:
     def __init__(self):
         self.simulation_context = None
         self.camera_prim = None
         self.ros_camera_graph = None
+        self.ros_control_graph = None  # New: For ROS2 control subscribers
         self.shutdown_requested = False
         self.last_rotation_time = 0
         self.current_yaw = 0.0  # Current camera yaw rotation
+        
+        # Movement control attributes
+        self.command_file = Path("/tmp/isaac_camera_commands.json")
+        self.camera_position = [2.0, 2.0, 2.0]  # x, y, z
+        self.camera_rotation = [0.0, 0.0, 0.0]  # roll, pitch, yaw in degrees
+        
+        # ROS2 movement state
+        self.cmd_vel_data = {'linear': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 
+                            'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}
+        self.position_cmd_data = {'x': None, 'y': None, 'z': None}
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -47,8 +61,8 @@ class FinalCameraNode:
             print("Initializing Isaac Sim simulation context...")
             
             # Enable ROS2 bridge extension (correct extension name)
-            print("Enabling isaacsim.ros2.bridge extension...")
-            extensions.enable_extension("isaacsim.ros2.bridge")
+            print("Enabling omni.isaac.ros2_bridge extension...")
+            extensions.enable_extension("omni.isaac.ros2_bridge")
             
             # Update to load extensions
             simulation_app.update()
@@ -118,8 +132,10 @@ class FinalCameraNode:
             ROS_CAMERA_GRAPH_PATH = "/ROS_Camera"
             
             # Create camera prim (following camera_periodic.py example)
-            camera_prim = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim(CAMERA_STAGE_PATH, "Camera"))
-            xform_api = UsdGeom.XformCommonAPI(camera_prim)
+            stage = omni.usd.get_context().get_stage()
+            camera_prim_usd = stage.DefinePrim(CAMERA_STAGE_PATH, "Camera")
+            camera_prim = UsdGeom.Camera(camera_prim_usd)
+            xform_api = UsdGeom.XformCommonAPI(camera_prim_usd)
             xform_api.SetTranslate(Gf.Vec3d(2, 2, 2))
             xform_api.SetRotate((0, 0, 0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
             camera_prim.GetHorizontalApertureAttr().Set(21)
@@ -128,7 +144,8 @@ class FinalCameraNode:
             camera_prim.GetFocalLengthAttr().Set(24)
             camera_prim.GetFocusDistanceAttr().Set(400)
             
-            self.camera_prim = camera_prim
+            # Store the USD prim for transform operations
+            self.camera_prim = camera_prim_usd
             
             simulation_app.update()
             
@@ -191,6 +208,48 @@ class FinalCameraNode:
             print(f"ERROR: Failed to create camera and ROS graph: {e}")
             print(traceback.format_exc())
             return False
+    
+    def create_ros_control_graph(self):
+        """Create ROS2 control subscribers for camera movement"""
+        try:
+            print("Creating ROS2 control subscribers...")
+            
+            # Ensure ROS2 bridge extension is loaded
+            extensions.enable_extension("omni.isaac.ros2_bridge")
+            
+            # Create ROS2 control graph for movement commands
+            keys = og.Controller.Keys
+            ros_graph_path = "/ROS_Control"
+            
+            (self.ros_control_graph, _, _, _) = og.Controller.edit(
+                {
+                    "graph_path": ros_graph_path,
+                    "evaluator_name": "push",
+                    "pipeline_stage": og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND,
+                },
+                {
+                    keys.CREATE_NODES: [
+                        ("OnTick", "omni.graph.action.OnTick"),
+                        ("ros2_context", "omni.isaac.ros2_bridge.ROS2Context"),
+                        ("cmd_vel_subscriber", "omni.isaac.ros2_bridge.ROS2SubscribeTwist"),
+                        ("pose_subscriber", "omni.isaac.ros2_bridge.ROS2SubscribePoseStamped"),
+                    ],
+                    keys.SET_VALUES: [
+                        ("ros2_context.inputs:domain_id", 0),
+                        ("cmd_vel_subscriber.inputs:topicName", "/camera/cmd_vel"),
+                        ("pose_subscriber.inputs:topicName", "/camera/cmd_pose"),
+                    ],
+                },
+            )
+            
+            print("✓ ROS2 control subscribers created successfully")
+            return True
+            
+        except Exception as e:
+            print(f"WARNING: Failed to create ROS2 control graph: {e}")
+            print("Continuing with file-based control only...")
+            self.ros_control_graph = None
+            return False
             
     def run_simulation(self):
         """Run the main simulation loop"""
@@ -209,18 +268,32 @@ class FinalCameraNode:
             start_time = time.time()
             
             print("\n=== Starting main simulation loop ===")
-            print("Publishing ROS2 topics:")
+            print("📸 Publishing ROS2 topics:")
             print("  - /camera/rgb (sensor_msgs/Image)")
             print("  - /camera/camera_info (sensor_msgs/CameraInfo)")
             print("  - /camera/depth (sensor_msgs/Image)")
             print("  - /clock (rosgraph_msgs/Clock)")
-            print("🔄 Camera will rotate randomly 360° every second")
+            print("")
+            print("🎮 Movement control available via:")
+            print("  - File-based: python3 camera_control_sender.py")
+            print(f"  - Command file: {self.command_file}")
+            if self.ros_control_graph:
+                print("  - ROS2 topics: /camera/cmd_vel, /camera/cmd_pose")
+            print("")
+            print("💡 Test movement with ROS2:")
+            print("  # Move forward:")
+            print("  ros2 topic pub --once /camera/cmd_vel geometry_msgs/msg/Twist '{linear: {x: 1.0}}'")
+            print("  # Move to position:")
+            print("  ros2 topic pub --once /camera/cmd_pose geometry_msgs/msg/PoseStamped '{pose: {position: {x: 3.0, y: 3.0, z: 3.0}}}'")
             print("Press Ctrl+C to stop\n")
             
             while not self.shutdown_requested:
                 try:
-                    # Rotate camera randomly every second
-                    self.rotate_camera_randomly()
+                    # Process movement commands from file
+                    self.process_movement_commands()
+                    
+                    # Process ROS2 movement commands
+                    self.process_ros_movement_commands()
                     
                     # Step simulation with rendering
                     self.simulation_context.step(render=True)
@@ -232,10 +305,10 @@ class FinalCameraNode:
                     if step_count % 100 == 0:
                         elapsed = time.time() - start_time
                         fps = step_count / elapsed if elapsed > 0 else 0
-                        print(f"Step {step_count:5d} | Elapsed: {elapsed:6.1f}s | FPS: {fps:5.1f} | Yaw: {self.current_yaw:6.1f}°")
+                        print(f"Step {step_count:5d} | Elapsed: {elapsed:6.1f}s | FPS: {fps:5.1f} | Pos: {self.camera_position}")
                         
                     # Limit FPS 
-                    time.sleep(0.016)  # ~60 FPS
+                    time.sleep(0.02)  # ~50 FPS
                     
                     # Safety check for very long runs
                     if step_count > 200000:  # Stop after 200k steps
@@ -280,10 +353,174 @@ class FinalCameraNode:
         """DISABLED: Camera rotation controlled by ROS2 commands only"""
         # Automatic rotation disabled - camera controlled by ROS2 topics
         pass
+    
+    def update_camera_transform(self):
+        """Update camera position and rotation in Isaac Sim"""
+        try:
+            if self.camera_prim:
+                print(f"🎥 Updating camera to position: {self.camera_position}, rotation: {self.camera_rotation}")
+                
+                # Apply transform to camera using UsdGeom.XformCommonAPI
+                xform_api = UsdGeom.XformCommonAPI(self.camera_prim)
+                
+                # Set position
+                xform_api.SetTranslate(Gf.Vec3d(self.camera_position[0], self.camera_position[1], self.camera_position[2]))
+                
+                # Set rotation (use the same format as camera creation)
+                rotation_tuple = (
+                    self.camera_rotation[0],  # roll
+                    self.camera_rotation[1],  # pitch  
+                    self.camera_rotation[2]   # yaw
+                )
+                xform_api.SetRotate(rotation_tuple, UsdGeom.XformCommonAPI.RotationOrderXYZ)
+                
+                print(f"✅ Camera transform applied successfully")
+            else:
+                print(f"❌ Camera prim not found!")
+                
+        except Exception as e:
+            print(f"❌ Error updating camera transform: {e}")
+    
+    def process_movement_commands(self):
+        """Process movement commands from file with robust error handling"""
+        try:
+            if not self.command_file.exists():
+                return
+                
+            # Read and immediately delete to prevent corruption
+            try:
+                with open(self.command_file, 'r') as f:
+                    content = f.read().strip()
+                
+                # Delete the file immediately after reading
+                self.command_file.unlink()
+                
+                if not content:
+                    return
                     
+                # Parse single JSON command
+                try:
+                    command = json.loads(content)
+                    self.process_single_command(command)
+                except json.JSONDecodeError as je:
+                    # If JSON parsing fails, skip silently to avoid spam
+                    pass
+                        
+            except FileNotFoundError:
+                # File was already processed by another thread
+                pass
+            except Exception as e:
+                # Try to clean up corrupted file
+                if self.command_file.exists():
+                    try:
+                        self.command_file.unlink()
+                    except:
+                        pass
+        except Exception as e:
+            # Silently handle overall file processing errors
+            pass
+    
+    def process_ros_movement_commands(self):
+        """Process ROS2 movement commands if available"""
+        try:
+            if not self.ros_control_graph:
+                return  # ROS2 control not available
+                
+            # Evaluate the ROS2 control graph to get latest messages
+            og.Controller.evaluate_sync(self.ros_control_graph)
+            
+            # Process cmd_vel (continuous velocity commands)
+            try:
+                # Get velocity data from ROS2 subscriber
+                linear_x_attr = og.Controller.attribute("cmd_vel_subscriber.outputs:linearVelocity")
+                angular_z_attr = og.Controller.attribute("cmd_vel_subscriber.outputs:angularVelocity")
+                
+                if linear_x_attr.is_valid() and angular_z_attr.is_valid():
+                    linear_vel = og.Controller.get(linear_x_attr)
+                    angular_vel = og.Controller.get(angular_z_attr)
+                    
+                    # Apply velocity commands (integrate over time)
+                    dt = 0.02  # 50Hz update rate
+                    if linear_vel and len(linear_vel) >= 3:
+                        self.camera_position[0] += linear_vel[0] * dt
+                        self.camera_position[1] += linear_vel[1] * dt
+                        self.camera_position[2] += linear_vel[2] * dt
+                        
+                    if angular_vel and len(angular_vel) >= 3:
+                        self.camera_rotation[2] += angular_vel[2] * dt * 57.2958  # rad/s to deg/s
+                        
+                        # Apply transform
+                        self.update_camera_transform()
+                        
+            except Exception as e:
+                # Silently handle ROS2 command errors to avoid spam
+                pass
+                
+            # Process pose commands (absolute positioning)
+            try:
+                # Get position data from ROS2 subscriber
+                position_attr = og.Controller.attribute("pose_subscriber.outputs:position")
+                orientation_attr = og.Controller.attribute("pose_subscriber.outputs:orientation")
+                
+                if position_attr.is_valid():
+                    position = og.Controller.get(position_attr)
+                    
+                    # Apply absolute position if valid
+                    if position and len(position) >= 3:
+                        self.camera_position[0] = position[0]
+                        self.camera_position[1] = position[1]
+                        self.camera_position[2] = position[2]
+                        
+                        # Apply transform
+                        self.update_camera_transform()
+                        
+            except Exception as e:
+                # Silently handle ROS2 command errors to avoid spam
+                pass
+                
+        except Exception as e:
+            # Silently handle overall ROS2 processing errors
+            pass
+    
+    def process_single_command(self, command):
+        """Process a single movement command"""
+        if not isinstance(command, dict):
+            return
+            
+        if command.get('type') == 'velocity':
+            # Handle velocity-based movement
+            vel = command.get('data', {})
+            dt = 0.02  # 50Hz update rate
+            
+            # Update position (m/s to m)
+            self.camera_position[0] += vel.get('linear_x', 0) * dt
+            self.camera_position[1] += vel.get('linear_y', 0) * dt
+            self.camera_position[2] += vel.get('linear_z', 0) * dt
+            
+            # Update rotation (rad/s to degrees)
+            self.camera_rotation[0] += vel.get('angular_x', 0) * dt * 57.2958
+            self.camera_rotation[1] += vel.get('angular_y', 0) * dt * 57.2958
+            self.camera_rotation[2] += vel.get('angular_z', 0) * dt * 57.2958
+            
+            # Apply the transform to Isaac Sim
+            self.update_camera_transform()
+            
+        elif command.get('type') == 'position':
+            # Set absolute position
+            pos = command.get('data', {})
+            self.camera_position = [
+                pos.get('x', self.camera_position[0]),
+                pos.get('y', self.camera_position[1]),
+                pos.get('z', self.camera_position[2])
+            ]
+            
+            # Apply the transform to Isaac Sim
+            self.update_camera_transform()
+
     def run(self):
         """Main execution method"""
-        print("=== Isaac Sim 5.0 ROS2 Camera Node - Final Working Version ===")
+        print("=== Isaac Sim 5.0 ROS2 Camera Control Node ===")
+        print("Movable camera with command-based control")
         print("Using official APIs: isaacsim.ros2.bridge, ROS2CameraHelper\n")
         
         try:
@@ -297,7 +534,10 @@ class FinalCameraNode:
                 print("FAILED: Could not create camera and ROS2 graph")
                 return False
                 
-            # Step 3: Run simulation
+            # Step 3: Create ROS2 control graph for movement commands
+            self.create_ros_control_graph()  # Continue even if this fails
+                
+            # Step 4: Run simulation
             return self.run_simulation()
             
         except Exception as e:
@@ -307,7 +547,7 @@ class FinalCameraNode:
 
 def main():
     """Main entry point"""
-    node = FinalCameraNode()
+    node = CameraControlNode()
     success = node.run()
     
     print(f"\n=== Final Status: {'SUCCESS' if success else 'FAILED'} ===")

@@ -1,6 +1,26 @@
 # Isaac Sim ROS2 Camera Control System
 
-A complete Isaac Sim + ROS2 integration for real-time camera control and data streaming.
+A complete Isaac Sim + ROS2 integration for real-time camera cont## 🔧 System Architecture
+
+```
+┌─────────────────┐    File I/O     ┌─────────────────────┐
+│   Command       │ ───────────────▶ │   Camera Control    │
+│   Sender        │    /tmp/json     │      Node           │
+│camera_control_   │                  │camera_control_      │
+│sender.py        │                  │node.py              │
+└─────────────────┘                  └─────────────────────┘
+         │                                       │
+         │ ROS2 Topics                          │ Visual Movement
+         ▼                                       ▼
+┌─────────────────┐                  ┌─────────────────────┐
+│   ROS2 System   │◀─────────────────│    Isaac Sim GUI    │
+│  /camera/*      │   Camera Data    │   Camera Movement   │
+└─────────────────┘                  └─────────────────────┘
+```
+
+**Dual Control Methods:**
+- **File-based**: JSON commands via `/tmp/isaac_camera_commands.json`
+- **ROS2 Topics**: Direct `/camera/cmd_vel` and `/camera/cmd_pose` subscriptioneaming.
 
 ## 🎯 Features
 
@@ -18,16 +38,19 @@ A complete Isaac Sim + ROS2 integration for real-time camera control and data st
 
 ### Launch the System
 
-1. **Start Isaac Sim Camera Node** (with movement capability):
+1. **Launch Camera Control System** (easiest method):
 ```bash
-$ISAAC_SIM_PATH/python.sh isaac_camera_working_movable.py
+./launch_camera_control.sh
 ```
 
-2. **Start ROS2 Command Bridge** (in separate terminal):
+2. **Or manually start the camera node**:
 ```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-python3 camera_command_sender.py
+$ISAAC_SIM_PATH/python.sh camera_control_node.py
+```
+
+3. **Send movement commands** (in separate terminal):
+```bash
+python3 camera_control_sender.py --help
 ```
 
 ## 🎮 Camera Control Commands
@@ -160,10 +183,22 @@ done
 
 ## 📁 File Structure
 
-- `isaac_camera_working_movable.py` - Main Isaac Sim camera node with movement
-- `camera_command_sender.py` - ROS2 to Isaac Sim command bridge
-- `src/isaac_test/` - ROS2 package for additional controllers
-- `launch_complete_system.sh` - Complete system launcher script
+**Core System:**
+- `camera_control_node.py` - Main Isaac Sim camera node with dual control modes
+- `camera_control_sender.py` - Command-line tool for sending movement commands
+
+**Launch Scripts:**
+- `launch_camera_control.sh` - Main system launcher
+- `launch_ros2_camera_test.sh` - Launch with automated testing
+
+**Testing:**
+- `test_camera_control.py` - File-based movement testing
+- `test_ros2_camera_control.py` - ROS2 topic-based testing  
+- `comprehensive_camera_test.py` - Complete test suite
+
+**Documentation:**
+- `CAMERA_CONTROL_README.md` - Detailed technical documentation
+- `README.md` - This overview guide
 
 ## 🎉 Success Indicators
 
@@ -183,5 +218,5 @@ If you encounter issues:
 
 ---
 
-**Status**: ✅ Fully functional ROS2 camera control system
-**Last Updated**: June 24, 2025
+**Status**: ✅ Fully functional camera control system (cleaned and organized)
+**Last Updated**: July 1, 2025
