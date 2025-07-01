@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Isaac Sim 5.0 ROS2 Camera Control Node
-Movable camera with ROS2 integration and command-based control
+Isaac Sim 5.0 ROS2 Camera Node - Final Working Version with Scenario Support
 Based on official Isaac Sim examples and documentation
+Enhanced with LLM-driven scenario management
 """
 import sys
 import signal
@@ -12,6 +12,13 @@ import math
 import random
 import json
 from pathlib import Path
+
+# Import scenario manager
+try:
+    from scenario_manager import ScenarioManager
+except ImportError:
+    print("Warning: scenario_manager not found, scenario features disabled")
+    ScenarioManager = None
 
 from isaacsim.simulation_app import SimulationApp
 CONFIG = {"renderer": "RaytracedLighting", "headless": False}  # Enable GUI for visualization
@@ -27,12 +34,11 @@ from isaacsim.core.utils import extensions, stage
 from isaacsim.storage.native import get_assets_root_path
 from pxr import Gf, UsdGeom, UsdLux
 
-class CameraControlNode:
+class FinalCameraNode:
     def __init__(self):
         self.simulation_context = None
         self.camera_prim = None
         self.ros_camera_graph = None
-        self.ros_control_graph = None  # New: For ROS2 control subscribers
         self.shutdown_requested = False
         self.last_rotation_time = 0
         self.current_yaw = 0.0  # Current camera yaw rotation
@@ -42,10 +48,11 @@ class CameraControlNode:
         self.camera_position = [2.0, 2.0, 2.0]  # x, y, z
         self.camera_rotation = [0.0, 0.0, 0.0]  # roll, pitch, yaw in degrees
         
-        # ROS2 movement state
-        self.cmd_vel_data = {'linear': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 
-                            'angular': {'x': 0.0, 'y': 0.0, 'z': 0.0}}
-        self.position_cmd_data = {'x': None, 'y': None, 'z': None}
+        # Scenario management attributes
+        self.scenario_manager = ScenarioManager() if ScenarioManager else None
+        self.scenario_config_file = Path("/tmp/isaac_scenario_config.json")
+        self.current_scenario_config = None
+        self.scenario_assets = []  # Track loaded scenario assets
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -56,13 +63,16 @@ class CameraControlNode:
         self.shutdown_requested = True
         
     def initialize_isaac_sim(self):
-        """Initialize Isaac Sim following official examples"""
+        """Initialize Isaac Sim following official examples with scenario support"""
         try:
             print("Initializing Isaac Sim simulation context...")
             
+            # Load scenario configuration first
+            self.load_scenario_config()
+            
             # Enable ROS2 bridge extension (correct extension name)
-            print("Enabling omni.isaac.ros2_bridge extension...")
-            extensions.enable_extension("omni.isaac.ros2_bridge")
+            print("Enabling isaacsim.ros2.bridge extension...")
+            extensions.enable_extension("isaacsim.ros2.bridge")
             
             # Update to load extensions
             simulation_app.update()
@@ -77,9 +87,11 @@ class CameraControlNode:
                 
             print(f"Using assets root path: {assets_root_path}")
             
-            # Load simple room environment
-            environment_path = assets_root_path + "/Isaac/Environments/Simple_Room/simple_room.usd"
-            stage.add_reference_to_stage(usd_path=environment_path, prim_path="/World/simple_room")
+            # Set up environment based on scenario (or default)
+            self.setup_scenario_environment(assets_root_path)
+            
+            # Load scenario robots if specified
+            self.load_scenario_robots(assets_root_path)
             
             # Add some interesting objects to view
             # Add a cube at origin
@@ -208,48 +220,6 @@ class CameraControlNode:
             print(f"ERROR: Failed to create camera and ROS graph: {e}")
             print(traceback.format_exc())
             return False
-    
-    def create_ros_control_graph(self):
-        """Create ROS2 control subscribers for camera movement"""
-        try:
-            print("Creating ROS2 control subscribers...")
-            
-            # Ensure ROS2 bridge extension is loaded
-            extensions.enable_extension("omni.isaac.ros2_bridge")
-            
-            # Create ROS2 control graph for movement commands
-            keys = og.Controller.Keys
-            ros_graph_path = "/ROS_Control"
-            
-            (self.ros_control_graph, _, _, _) = og.Controller.edit(
-                {
-                    "graph_path": ros_graph_path,
-                    "evaluator_name": "push",
-                    "pipeline_stage": og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND,
-                },
-                {
-                    keys.CREATE_NODES: [
-                        ("OnTick", "omni.graph.action.OnTick"),
-                        ("ros2_context", "omni.isaac.ros2_bridge.ROS2Context"),
-                        ("cmd_vel_subscriber", "omni.isaac.ros2_bridge.ROS2SubscribeTwist"),
-                        ("pose_subscriber", "omni.isaac.ros2_bridge.ROS2SubscribePoseStamped"),
-                    ],
-                    keys.SET_VALUES: [
-                        ("ros2_context.inputs:domain_id", 0),
-                        ("cmd_vel_subscriber.inputs:topicName", "/camera/cmd_vel"),
-                        ("pose_subscriber.inputs:topicName", "/camera/cmd_pose"),
-                    ],
-                },
-            )
-            
-            print("✓ ROS2 control subscribers created successfully")
-            return True
-            
-        except Exception as e:
-            print(f"WARNING: Failed to create ROS2 control graph: {e}")
-            print("Continuing with file-based control only...")
-            self.ros_control_graph = None
-            return False
             
     def run_simulation(self):
         """Run the main simulation loop"""
@@ -275,25 +245,17 @@ class CameraControlNode:
             print("  - /clock (rosgraph_msgs/Clock)")
             print("")
             print("🎮 Movement control available via:")
-            print("  - File-based: python3 camera_control_sender.py")
+            print("  - python3 camera_command_sender.py")
             print(f"  - Command file: {self.command_file}")
-            if self.ros_control_graph:
-                print("  - ROS2 topics: /camera/cmd_vel, /camera/cmd_pose")
             print("")
-            print("💡 Test movement with ROS2:")
-            print("  # Move forward:")
+            print("💡 Test movement:")
             print("  ros2 topic pub --once /camera/cmd_vel geometry_msgs/msg/Twist '{linear: {x: 1.0}}'")
-            print("  # Move to position:")
-            print("  ros2 topic pub --once /camera/cmd_pose geometry_msgs/msg/PoseStamped '{pose: {position: {x: 3.0, y: 3.0, z: 3.0}}}'")
             print("Press Ctrl+C to stop\n")
             
             while not self.shutdown_requested:
                 try:
                     # Process movement commands from file
                     self.process_movement_commands()
-                    
-                    # Process ROS2 movement commands
-                    self.process_ros_movement_commands()
                     
                     # Step simulation with rendering
                     self.simulation_context.step(render=True)
@@ -416,72 +378,15 @@ class CameraControlNode:
                         self.command_file.unlink()
                     except:
                         pass
-        except Exception as e:
-            # Silently handle overall file processing errors
-            pass
-    
-    def process_ros_movement_commands(self):
-        """Process ROS2 movement commands if available"""
-        try:
-            if not self.ros_control_graph:
-                return  # ROS2 control not available
-                
-            # Evaluate the ROS2 control graph to get latest messages
-            og.Controller.evaluate_sync(self.ros_control_graph)
             
-            # Process cmd_vel (continuous velocity commands)
-            try:
-                # Get velocity data from ROS2 subscriber
-                linear_x_attr = og.Controller.attribute("cmd_vel_subscriber.outputs:linearVelocity")
-                angular_z_attr = og.Controller.attribute("cmd_vel_subscriber.outputs:angularVelocity")
-                
-                if linear_x_attr.is_valid() and angular_z_attr.is_valid():
-                    linear_vel = og.Controller.get(linear_x_attr)
-                    angular_vel = og.Controller.get(angular_z_attr)
-                    
-                    # Apply velocity commands (integrate over time)
-                    dt = 0.02  # 50Hz update rate
-                    if linear_vel and len(linear_vel) >= 3:
-                        self.camera_position[0] += linear_vel[0] * dt
-                        self.camera_position[1] += linear_vel[1] * dt
-                        self.camera_position[2] += linear_vel[2] * dt
-                        
-                    if angular_vel and len(angular_vel) >= 3:
-                        self.camera_rotation[2] += angular_vel[2] * dt * 57.2958  # rad/s to deg/s
-                        
-                        # Apply transform
-                        self.update_camera_transform()
-                        
-            except Exception as e:
-                # Silently handle ROS2 command errors to avoid spam
-                pass
-                
-            # Process pose commands (absolute positioning)
-            try:
-                # Get position data from ROS2 subscriber
-                position_attr = og.Controller.attribute("pose_subscriber.outputs:position")
-                orientation_attr = og.Controller.attribute("pose_subscriber.outputs:orientation")
-                
-                if position_attr.is_valid():
-                    position = og.Controller.get(position_attr)
-                    
-                    # Apply absolute position if valid
-                    if position and len(position) >= 3:
-                        self.camera_position[0] = position[0]
-                        self.camera_position[1] = position[1]
-                        self.camera_position[2] = position[2]
-                        
-                        # Apply transform
-                        self.update_camera_transform()
-                        
-            except Exception as e:
-                # Silently handle ROS2 command errors to avoid spam
-                pass
-                
         except Exception as e:
-            # Silently handle overall ROS2 processing errors
-            pass
-    
+            # Clean up on any error
+            if self.command_file.exists():
+                try:
+                    self.command_file.unlink()
+                except:
+                    pass
+            
     def process_single_command(self, command):
         """Process a single movement command"""
         if not isinstance(command, dict):
@@ -517,28 +422,140 @@ class CameraControlNode:
             # Apply the transform to Isaac Sim
             self.update_camera_transform()
 
+    def load_scenario_config(self):
+        """Load scenario configuration if available"""
+        try:
+            if self.scenario_config_file.exists() and self.scenario_manager:
+                config = self.scenario_manager.load_scenario_config()
+                if config:
+                    self.current_scenario_config = config
+                    print(f"🎯 Loaded scenario: {config['parsed_scenario']['scene']}")
+                    return True
+        except Exception as e:
+            print(f"⚠️  Could not load scenario config: {e}")
+        return False
+    
+    def setup_scenario_environment(self, assets_root_path):
+        """Set up environment based on scenario configuration"""
+        if not self.current_scenario_config:
+            # Use default simple room environment
+            environment_path = assets_root_path + "/Isaac/Environments/Simple_Room/simple_room.usd"
+            stage.add_reference_to_stage(usd_path=environment_path, prim_path="/World/simple_room")
+            print("✅ Default simple_room environment loaded")
+            return True
+            
+        try:
+            scenario = self.current_scenario_config['parsed_scenario']
+            scene_name = scenario['scene']
+            
+            # Load specified scene
+            if scene_name in self.scenario_manager.available_scenes:
+                scene_info = self.scenario_manager.available_scenes[scene_name]
+                scene_path = assets_root_path + scene_info['path']
+                stage.add_reference_to_stage(usd_path=scene_path, prim_path=f"/World/{scene_name}")
+                print(f"✅ Scenario scene loaded: {scene_name}")
+                
+                # Set camera position if specified in scenario
+                if scenario.get('camera_position'):
+                    self.camera_position = scenario['camera_position'].copy()
+                    print(f"📷 Scenario camera position set: {self.camera_position}")
+                
+                return True
+            else:
+                print(f"⚠️  Scene '{scene_name}' not found, using simple_room")
+                # Fall back to simple room
+                environment_path = assets_root_path + "/Isaac/Environments/Simple_Room/simple_room.usd"
+                stage.add_reference_to_stage(usd_path=environment_path, prim_path="/World/simple_room")
+                
+        except Exception as e:
+            print(f"❌ Error setting up scenario environment: {e}")
+            # Fall back to simple room
+            environment_path = assets_root_path + "/Isaac/Environments/Simple_Room/simple_room.usd"
+            stage.add_reference_to_stage(usd_path=environment_path, prim_path="/World/simple_room")
+        
+        return True
+    
+    def load_scenario_robots(self, assets_root_path):
+        """Load robots specified in scenario configuration"""
+        if not self.current_scenario_config:
+            return
+            
+        try:
+            scenario = self.current_scenario_config['parsed_scenario']
+            robots = scenario.get('robots', [])
+            
+            for i, robot_config in enumerate(robots):
+                robot_type = robot_config['type']
+                
+                if robot_type in self.scenario_manager.available_robots:
+                    robot_info = self.scenario_manager.available_robots[robot_type]
+                    robot_path = assets_root_path + robot_info['path']
+                    robot_prim_path = f"/World/{robot_config['name']}"
+                    
+                    # Load robot asset
+                    stage.add_reference_to_stage(usd_path=robot_path, prim_path=robot_prim_path)
+                    
+                    # Set robot position
+                    robot_prim = omni.usd.get_context().get_stage().GetPrimAtPath(robot_prim_path)
+                    if robot_prim:
+                        xform_api = UsdGeom.XformCommonAPI(robot_prim)
+                        position = robot_config.get('position', [0, 0, 0])
+                        xform_api.SetTranslate(Gf.Vec3d(position[0], position[1], position[2]))
+                        
+                        print(f"🤖 Robot loaded: {robot_type} at {position}")
+                        
+                        # Track loaded assets
+                        self.scenario_assets.append({
+                            'type': 'robot',
+                            'name': robot_config['name'],
+                            'prim_path': robot_prim_path
+                        })
+                        
+                        # TODO: Enable ROS2 control if specified
+                        if robot_config.get('ros_enabled'):
+                            print(f"🔗 ROS2 control enabled for {robot_config['name']}")
+                else:
+                    print(f"⚠️  Robot type '{robot_type}' not found, skipping")
+                    
+        except Exception as e:
+            print(f"❌ Error loading scenario robots: {e}")
+    
     def run(self):
-        """Main execution method"""
-        print("=== Isaac Sim 5.0 ROS2 Camera Control Node ===")
-        print("Movable camera with command-based control")
-        print("Using official APIs: isaacsim.ros2.bridge, ROS2CameraHelper\n")
+        """Main execution method with scenario support"""
+        print("=== Isaac Sim 5.0 ROS2 Camera Node - Enhanced with Scenario Support ===")
+        print("Using official APIs: isaacsim.ros2.bridge, ROS2CameraHelper")
+        if self.scenario_manager:
+            print("🎯 Scenario management enabled")
+        print()
         
         try:
-            # Step 1: Initialize Isaac Sim
+            # Step 1: Initialize Isaac Sim (includes scenario loading)
             if not self.initialize_isaac_sim():
                 print("FAILED: Could not initialize Isaac Sim")
                 return False
+                
+            # Print scenario info if loaded
+            if self.current_scenario_config:
+                scenario = self.current_scenario_config['parsed_scenario']
+                print(f"\n🎬 Active Scenario:")
+                print(f"   Scene: {scenario['scene']}")
+                print(f"   Robots: {len(scenario['robots'])} robot(s)")
+                print(f"   Special requirements: {scenario['special_requirements']}")
+                print(f"   Camera position: {scenario.get('camera_position', 'default')}")
+                print()
                 
             # Step 2: Create camera and ROS2 publishing graph
             if not self.create_camera_and_ros_graph():
                 print("FAILED: Could not create camera and ROS2 graph")
                 return False
                 
-            # Step 3: Create ROS2 control graph for movement commands
-            self.create_ros_control_graph()  # Continue even if this fails
-                
-            # Step 4: Run simulation
+            # Step 3: Run simulation
             return self.run_simulation()
+            
+        except Exception as e:
+            print(f"FATAL ERROR: {e}")
+            print(traceback.format_exc())
+            return False
             
         except Exception as e:
             print(f"FATAL ERROR: {e}")
@@ -547,7 +564,7 @@ class CameraControlNode:
 
 def main():
     """Main entry point"""
-    node = CameraControlNode()
+    node = FinalCameraNode()
     success = node.run()
     
     print(f"\n=== Final Status: {'SUCCESS' if success else 'FAILED'} ===")

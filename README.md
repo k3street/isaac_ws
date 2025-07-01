@@ -1,33 +1,32 @@
-# Isaac Sim ROS2 Camera Control System
+# Isaac Sim ROS2 Camera Control System with LLM-Driven Scenarios
 
-A complete Isaac Sim + ROS2 integration for real-time camera cont## 🔧 System Architecture
+A complete Isaac Sim + ROS2 integration for real-time camera control and intelligent scenario management. Convert natural language requests into fully configured Isaac Sim environments with robots and cameras.
 
+## 🚀 Quick Start - Three Simple Steps
+
+```bash
+# 1. Set environment (replace with your Isaac Sim path)
+export ISAAC_SIM_PATH=/home/user/.local/share/ov/pkg/isaac_sim-5.0.0
+source /opt/ros/jazzy/setup.bash
+cd /home/kimate/isaac_ws
+
+# 2. Launch with scenario
+./launch_camera_control_with_scenarios.sh "warehouse scene with carter 2.0 robot that is fully ros controlled"
+
+# 3. Control camera (in another terminal)
+python3 camera_cli.py overhead
+python3 camera_cli.py move --x 2.0
+python3 camera_cli.py position --x 0 --y 0 --z 10
 ```
-┌─────────────────┐    File I/O     ┌─────────────────────┐
-│   Command       │ ───────────────▶ │   Camera Control    │
-│   Sender        │    /tmp/json     │      Node           │
-│camera_control_   │                  │camera_control_      │
-│sender.py        │                  │node.py              │
-└─────────────────┘                  └─────────────────────┘
-         │                                       │
-         │ ROS2 Topics                          │ Visual Movement
-         ▼                                       ▼
-┌─────────────────┐                  ┌─────────────────────┐
-│   ROS2 System   │◀─────────────────│    Isaac Sim GUI    │
-│  /camera/*      │   Camera Data    │   Camera Movement   │
-└─────────────────┘                  └─────────────────────┘
-```
 
-**Dual Control Methods:**
-- **File-based**: JSON commands via `/tmp/isaac_camera_commands.json`
-- **ROS2 Topics**: Direct `/camera/cmd_vel` and `/camera/cmd_pose` subscriptioneaming.
+## 🎯 Key Features
 
-## 🎯 Features
-
-- **Real-time Camera Control**: Move and rotate camera in Isaac Sim via ROS2 commands
-- **Live Data Streaming**: RGB images, depth data, and camera info published to ROS2
-- **Multiple Control Modes**: Velocity-based movement and absolute positioning
-- **Visual Feedback**: See camera movement in real-time within Isaac Sim interface
+- **🗣️ Natural Language Scenarios**: "warehouse with carter robot" → Full Isaac Sim environment
+- **🎮 Intuitive Camera Control**: Move, rotate, and position camera with simple commands  
+- **🤖 Multi-Robot Support**: Carter, Franka, UR10 robots with ROS2 control
+- **📊 Real-time Monitoring**: System status, scenario validation, and health checking
+- **🔄 Live Data Streaming**: RGB, depth, camera info via ROS2 topics
+- **✅ Proven Working**: User-validated camera movement and scenario management
 
 ## 🚀 Quick Start
 

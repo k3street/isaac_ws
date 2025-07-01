@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Camera Control Command Sender
-Sends movement commands to Isaac Sim Camera Control Node via file-based interface
+ROS2 Camera Command Sender
+Receives ROS2 topics and sends movement commands to Isaac Sim via file
 """
 
 import json
