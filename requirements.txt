@@ -1,0 +1,22 @@
+# Isaac Sim 5.0 ROS2 Camera Control with LLM Support
+# Core dependencies for LLM integration
+
+# OpenAI API
+openai>=1.0.0
+
+# Google Gemini API  
+google-generativeai>=0.3.0
+
+# Anthropic Claude API
+anthropic>=0.7.0
+
+# Image processing and utilities
+pillow>=8.0.0
+requests>=2.25.0
+opencv-python>=4.5.0
+
+# Optional: Base64 encoding utilities
+base64
+
+# ROS2 dependencies are handled by the system
+# cv_bridge, rclpy, etc. come with ROS2 installation
