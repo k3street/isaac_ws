@@ -71,7 +71,8 @@ Isaac Sim 5.0 ROS2 Camera Control System (PRODUCTION READY)
 │   ├── Bridge Extension (isaacsim.ros2.bridge) ✅ ENABLED
 │   ├── Topic Publishing (RGB, Depth, Info) ✅ 15-19 Hz
 │   ├── Message Handling (Twist, PoseStamped) ✅ RESPONSIVE
-│   └── Node Management ✅ ROBUST
+│   ├── Node Management ✅ ROBUST
+│   └── **Known Limitation**: Python 3.11/3.12 compatibility ⚠️ DOCUMENTED
 │
 └── 📚 Documentation & Testing
     ├── Agent Handoff (AGENT_HANDOFF.md) ✅ COMPLETE
@@ -148,6 +149,26 @@ Isaac Sim 5.0 ROS2 Camera Control System (PRODUCTION READY)
 - [x] Plugin-based LLM provider system
 - [x] Configurable camera and scenario parameters
 - [x] Clear API interfaces for integration
+
+---
+
+## ⚠️ TECHNICAL LIMITATIONS & CONSTRAINTS
+
+### Python Version Compatibility
+- **Issue**: Isaac Sim requires Python 3.11, ROS2 Jazzy uses Python 3.12
+- **Impact**: Direct ROS2 node execution within Isaac Sim is limited
+- **Current Solution**: LLM camera controller runs as separate ROS2 process
+- **Status**: System designed to work around this limitation; all functionality preserved
+
+### ROS2 Bridge Constraints  
+- **Extension**: `isaacsim.ros2.bridge` loads successfully but with limited bidirectional communication
+- **Workaround**: Camera control achieved through Isaac Sim's native API
+- **Future**: May be resolved with Isaac Sim updates or ROS2 environment configuration
+
+### Resolution Recommendations
+1. **Immediate**: Continue using current architecture (recommended)
+2. **Short-term**: Monitor Isaac Sim updates for Python 3.12 support
+3. **Long-term**: Consider ROS2 environment configuration for Python 3.11
 
 ---
 

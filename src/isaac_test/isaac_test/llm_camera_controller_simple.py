@@ -239,24 +239,24 @@ class LLMCameraController(Node):
             "reasoning": "LLM analysis placeholder - maintaining current position"
         }
         
-        # Add some variety based on provider
+        # Add some variety based on provider with higher confidence to ensure movement
         if self.llm_provider == LLMProvider.OPENAI_GPT41:
             analysis.update({
                 "action": "move_closer",
                 "reasoning": "OpenAI GPT-4.1 suggests closer inspection (STUB)",
-                "confidence": 0.85
+                "confidence": 0.9
             })
         elif self.llm_provider == LLMProvider.GEMINI_25:
             analysis.update({
                 "action": "rotate_left",
                 "reasoning": "Gemini 2.5 recommends left rotation for better view (STUB)",
-                "confidence": 0.75
+                "confidence": 0.9
             })
         elif self.llm_provider == LLMProvider.CLAUDE_4_SONNET:
             analysis.update({
                 "action": "move_up",
                 "reasoning": "Claude 4 Sonnet suggests elevated perspective (STUB)",
-                "confidence": 0.90
+                "confidence": 0.9
             })
         
         self.get_logger().info(f'🧠 {self.llm_provider.value} Analysis (STUB): {analysis["action"]} - {analysis["reasoning"]}')
@@ -320,9 +320,13 @@ class LLMCameraController(Node):
         action = analysis.get('action', 'hold_position')
         confidence = analysis.get('confidence', 0.0)
         
+        self.get_logger().info(f'🎯 Analysis result: action={action}, confidence={confidence:.2f}, threshold={self.confidence_threshold}')
+        
         # Scale movement by confidence
         linear_scale = self.movement_scale * confidence
         angular_scale = self.rotation_scale * confidence
+        
+        self.get_logger().info(f'📏 Movement scales: linear={linear_scale:.3f}, angular={angular_scale:.3f}')
         
         # Map actions to movements
         if action == 'move_closer':
@@ -349,7 +353,9 @@ class LLMCameraController(Node):
         # Publish movement command
         if action != 'hold_position':
             self.cmd_vel_pub.publish(twist)
-            self.get_logger().info(f'🎮 Executing: {action} (confidence: {confidence:.2f})')
+            self.get_logger().info(f'🎮 PUBLISHED MOVEMENT: {action} - linear=[{twist.linear.x:.3f}, {twist.linear.y:.3f}, {twist.linear.z:.3f}], angular=[{twist.angular.x:.3f}, {twist.angular.y:.3f}, {twist.angular.z:.3f}]')
+        else:
+            self.get_logger().info(f'⏸️  Holding position (action: {action})')
     
     def publish_analysis(self, analysis):
         """Publish analysis results"""

@@ -28,6 +28,7 @@
 - **Installation Path**: `/home/kimate/isaacsim/_build/linux-x86_64/release` ✅ VALIDATED
 - **Performance**: ~31 FPS simulation rate ✅ OPTIMAL
 - **ROS2 Bridge**: `isaacsim.ros2.bridge` extension active ✅ VALIDATED
+- **Known Limitation**: Python version compatibility (Isaac Sim 3.11 vs ROS2 Jazzy 3.12) ⚠️ DOCUMENTED
 
 ---
 
@@ -78,3 +79,19 @@
     # Claude
     ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=claude_4_sonnet anthropic_api_key:='your-key'
     ```
+
+---
+
+## ⚠️ KNOWN TECHNICAL LIMITATIONS
+
+### Python Version Compatibility Issue
+- **Issue**: Isaac Sim uses Python 3.11, while ROS2 Jazzy uses Python 3.12
+- **Impact**: Direct ROS2 node execution within Isaac Sim is limited
+- **Current Workaround**: LLM camera controller runs as separate ROS2 node outside Isaac Sim
+- **Status**: System designed to work around this limitation; camera control still functional
+- **Future Resolution**: May be resolved with Isaac Sim updates or ROS2 environment configuration
+
+### ROS2 Bridge Limitations
+- **Extension Status**: `isaacsim.ros2.bridge` loads successfully but may have limited functionality
+- **Topic Publishing**: Camera data publishing works, but bidirectional communication is constrained
+- **Workaround**: Camera control achieved through Isaac Sim's native API rather than ROS2 topics

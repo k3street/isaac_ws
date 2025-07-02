@@ -37,6 +37,8 @@ python3 camera_cli.py position --x 0 --y 0 --z 10
 - ROS2 Jazzy
 - Python 3.11+ (for Isaac Sim compatibility)
 
+**Important Note**: There is a known Python version compatibility issue between Isaac Sim (Python 3.11) and ROS2 Jazzy (Python 3.12). While the ROS2 bridge extension loads in Isaac Sim, full ROS2 topic communication may be limited. The current system works around this by running the LLM camera controller as a separate ROS2 node outside of Isaac Sim.
+
 ### Launch Instructions
 
 1.  **Build and Source the Workspace**:
@@ -131,3 +133,4 @@ If you encounter issues:
 2. Verify your ROS2 environment is properly sourced.
 3. Ensure Python version compatibility (3.11+ for Isaac Sim).
 4. Test with the `simulation` provider first before using real LLM providers.
+5. **Note**: Due to Python version differences between Isaac Sim (3.11) and ROS2 Jazzy (3.12), some ROS2 topic communication may be limited. The system is designed to work around this limitation.

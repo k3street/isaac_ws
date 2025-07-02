@@ -2,7 +2,7 @@
 """
 Isaac Sim 5.0 ROS2 Camera Node - Final Working Version with Scenario Support
 Based on official Isaac Sim examples and documentation
-Enhanced with LLM-driven scenario management
+Enhanced with LLM-driven scenario management and ROS2 cmd_vel support
 """
 import sys
 import signal
@@ -11,6 +11,7 @@ import traceback
 import math
 import random
 import json
+import threading
 from pathlib import Path
 
 # Import scenario manager
@@ -34,6 +35,11 @@ from isaacsim.core.utils import extensions, stage
 from isaacsim.storage.native import get_assets_root_path
 from pxr import Gf, UsdGeom, UsdLux
 
+# ROS2 imports
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+
 class FinalCameraNode:
     def __init__(self):
         self.simulation_context = None
@@ -47,6 +53,11 @@ class FinalCameraNode:
         self.command_file = Path("/tmp/isaac_camera_commands.json")
         self.camera_position = [2.0, 2.0, 2.0]  # x, y, z
         self.camera_rotation = [0.0, 0.0, 0.0]  # roll, pitch, yaw in degrees
+        
+        # ROS2 node for cmd_vel subscription
+        self.ros_node = None
+        self.ros_thread = None
+        self.initialize_ros2_node()
         
         # Scenario management attributes
         self.scenario_manager = ScenarioManager() if ScenarioManager else None
@@ -302,6 +313,22 @@ class FinalCameraNode:
         try:
             print("\nCleaning up...")
             
+            # Clean up ROS2 node
+            if self.ros_node:
+                try:
+                    self.ros_node.destroy_node()
+                    print("✓ ROS2 node destroyed")
+                except Exception as e:
+                    print(f"Warning: Error destroying ROS2 node: {e}")
+            
+            # Shutdown ROS2 if we initialized it
+            if rclpy.ok():
+                try:
+                    rclpy.shutdown()
+                    print("✓ ROS2 shutdown")
+                except Exception as e:
+                    print(f"Warning: Error shutting down ROS2: {e}")
+            
             if self.simulation_context:
                 self.simulation_context.stop()
                 print("✓ Simulation stopped")
@@ -520,6 +547,87 @@ class FinalCameraNode:
         except Exception as e:
             print(f"❌ Error loading scenario robots: {e}")
     
+    def initialize_ros2_node(self):
+        """Initialize ROS2 node for cmd_vel subscription"""
+        try:
+            # Initialize ROS2 if not done
+            if not rclpy.ok():
+                rclpy.init()
+            
+            # Create a simple ROS2 node
+            class CameraControlROS2Node(Node):
+                def __init__(self, camera_node):
+                    super().__init__('isaac_camera_control_node')
+                    self.camera_node = camera_node
+                    self.subscription = self.create_subscription(
+                        Twist,
+                        '/camera/cmd_vel',
+                        self.cmd_vel_callback,
+                        10
+                    )
+                    self.get_logger().info('🎮 Isaac Camera Control ROS2 Node initialized')
+                    self.get_logger().info('📡 Subscribing to /camera/cmd_vel')
+                
+                def cmd_vel_callback(self, msg):
+                    """Handle incoming cmd_vel messages"""
+                    try:
+                        self.get_logger().info(f'🎮 Received cmd_vel: linear=[{msg.linear.x:.3f}, {msg.linear.y:.3f}, {msg.linear.z:.3f}], angular=[{msg.angular.x:.3f}, {msg.angular.y:.3f}, {msg.angular.z:.3f}]')
+                        
+                        # Convert ROS2 Twist message to file-based command
+                        command = {
+                            "type": "velocity",
+                            "data": {
+                                "linear": {
+                                    "x": msg.linear.x,
+                                    "y": msg.linear.y,
+                                    "z": msg.linear.z
+                                },
+                                "angular": {
+                                    "x": msg.angular.x,
+                                    "y": msg.angular.y,
+                                    "z": msg.angular.z
+                                }
+                            },
+                            "timestamp": time.time()
+                        }
+                        
+                        # Write command to file (same format as camera_cli.py)
+                        self.camera_node.write_command_file(command)
+                        
+                    except Exception as e:
+                        self.get_logger().error(f'Error processing cmd_vel: {e}')
+            
+            # Create ROS2 node
+            self.ros_node = CameraControlROS2Node(self)
+            
+            # Start ROS2 spinning in a separate thread
+            def ros_spin():
+                try:
+                    rclpy.spin(self.ros_node)
+                except Exception as e:
+                    print(f"ROS2 spin error: {e}")
+            
+            self.ros_thread = threading.Thread(target=ros_spin, daemon=True)
+            self.ros_thread.start()
+            
+            print("✅ ROS2 cmd_vel subscriber initialized successfully")
+            
+        except Exception as e:
+            print(f"❌ Error initializing ROS2 node: {e}")
+            print("Camera control will work with file-based commands only")
+    
+    def write_command_file(self, command):
+        """Write command to file for processing by main loop"""
+        try:
+            # Write command to file (atomic operation)
+            temp_file = Path(f"{self.command_file}.tmp")
+            with open(temp_file, 'w') as f:
+                json.dump(command, f)
+            temp_file.rename(self.command_file)
+            
+        except Exception as e:
+            print(f"Error writing command file: {e}")
+
     def run(self):
         """Main execution method with scenario support"""
         print("=== Isaac Sim 5.0 ROS2 Camera Node - Enhanced with Scenario Support ===")

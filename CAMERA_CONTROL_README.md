@@ -293,6 +293,26 @@ QOS_PROFILE = rclpy.qos.QoSProfile(
 
 ## Troubleshooting
 
+### Important System Limitations
+
+#### Python Version Compatibility Issue
+**Issue**: Isaac Sim (Python 3.11) and ROS2 Jazzy (Python 3.12) version mismatch.
+
+**Symptoms**:
+- ROS2 bridge extension loads but may have limited functionality
+- Direct ROS2 node execution within Isaac Sim may fail
+- Camera topic publishing works, but bidirectional ROS2 communication is constrained
+
+**Current Workaround**:
+- LLM camera controller runs as separate ROS2 node outside Isaac Sim
+- Camera control achieved through Isaac Sim's native API
+- System designed to work around this limitation
+
+**Resolution Options**:
+1. Wait for Isaac Sim updates with Python 3.12 support
+2. Configure ROS2 environment to use Python 3.11
+3. Continue using current workaround (recommended)
+
 ### Common Issues
 
 #### Camera Not Moving

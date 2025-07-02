@@ -51,8 +51,8 @@ def generate_launch_description():
             'gemini_api_key': LaunchConfiguration('gemini_api_key'),
             'anthropic_api_key': LaunchConfiguration('anthropic_api_key'),
             'analysis_interval': LaunchConfiguration('analysis_interval'),
-            'movement_scale': 0.5,
-            'rotation_scale': 0.3,
+            'movement_scale': 2.5,  # Increased from 0.5
+            'rotation_scale': 1.5,  # Increased from 0.3
             'confidence_threshold': 0.5,
             'llm_temperature': 0.1,
             'llm_max_tokens': 300
