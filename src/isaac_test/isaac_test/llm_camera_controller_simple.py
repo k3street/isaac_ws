@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Isaac Test Package - Simplified LLM Camera Controller Node
-Supports multiple LLM providers via ROS2 parameters with stub implementations
+Supports multiple LLM providers via ROS2 parameters with real Gemini 2.5 implementation
+Environment variables loaded from .env file for API keys
 """
 import rclpy
 from rclpy.node import Node
@@ -14,7 +15,38 @@ from cv_bridge import CvBridge
 import json
 import time
 import threading
+import os
 from enum import Enum
+import base64
+import io
+from PIL import Image as PILImage
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
+
+# LLM API imports
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 class LLMProvider(Enum):
     """Supported LLM providers"""
@@ -29,20 +61,20 @@ class LLMCameraController(Node):
     def __init__(self):
         super().__init__('isaac_test_llm_controller')
         
-        # Declare ROS2 parameters
-        self.declare_parameter('analysis_interval', 2.0)
-        self.declare_parameter('movement_scale', 0.5)
-        self.declare_parameter('rotation_scale', 0.3)
-        self.declare_parameter('confidence_threshold', 0.5)
+        # Declare ROS2 parameters with environment variable defaults
+        self.declare_parameter('analysis_interval', float(os.getenv('ANALYSIS_INTERVAL', '2.0')))
+        self.declare_parameter('movement_scale', float(os.getenv('MOVEMENT_SCALE', '0.5')))
+        self.declare_parameter('rotation_scale', float(os.getenv('ROTATION_SCALE', '0.3')))
+        self.declare_parameter('confidence_threshold', float(os.getenv('CONFIDENCE_THRESHOLD', '0.5')))
         
-        # LLM Configuration Parameters
+        # LLM Configuration Parameters with environment variable defaults
         self.declare_parameter('llm_provider', 'simulation')
-        self.declare_parameter('openai_api_key', '')
-        self.declare_parameter('gemini_api_key', '')
-        self.declare_parameter('anthropic_api_key', '')
-        self.declare_parameter('llm_model_version', '')
-        self.declare_parameter('llm_temperature', 0.1)
-        self.declare_parameter('llm_max_tokens', 300)
+        self.declare_parameter('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
+        self.declare_parameter('gemini_api_key', os.getenv('GEMINI_API_KEY', '') or os.getenv('GOOGLE_API_KEY', ''))
+        self.declare_parameter('anthropic_api_key', os.getenv('ANTHROPIC_API_KEY', ''))
+        self.declare_parameter('llm_model_version', os.getenv('LLM_MODEL_VERSION', ''))
+        self.declare_parameter('llm_temperature', float(os.getenv('LLM_TEMPERATURE', '0.1')))
+        self.declare_parameter('llm_max_tokens', int(os.getenv('LLM_MAX_TOKENS', '300')))
         
         # Get parameters
         self.analysis_interval = self.get_parameter('analysis_interval').value
@@ -90,6 +122,10 @@ class LLMCameraController(Node):
         self.status_timer = self.create_timer(5.0, self.publish_status)
         
         self.get_logger().info('🤖 Isaac Test LLM Controller initialized')
+        if DOTENV_AVAILABLE:
+            self.get_logger().info('📁 Environment variables loaded from .env file')
+        else:
+            self.get_logger().info('⚠️  python-dotenv not available, using system environment only')
         self.get_logger().info(f'🧠 LLM Provider: {self.llm_provider.value}')
         self.get_logger().info(f'📸 Subscribing: /camera/rgb')
         self.get_logger().info(f'🎮 Publishing: /camera/cmd_vel')
@@ -140,19 +176,60 @@ class LLMCameraController(Node):
         return True  # Simulation doesn't need API key
     
     def _initialize_llm_client(self):
-        """Initialize LLM client - STUB IMPLEMENTATION"""
+        """Initialize LLM client with real implementations"""
+        self.get_logger().info(f'🔍 DEBUG: GEMINI_AVAILABLE = {GEMINI_AVAILABLE}')
+        self.get_logger().info(f'🔍 DEBUG: llm_provider = {self.llm_provider}')
+        self.get_logger().info(f'🔍 DEBUG: gemini_api_key = {"*REDACTED*" if self.gemini_api_key else "None"}')
         try:
-            if self.llm_provider == LLMProvider.OPENAI_GPT41:
-                self.get_logger().info('🔧 OpenAI GPT-4.1 client initialized (STUB)')
-                self.llm_client = "openai_stub"
+            if self.llm_provider == LLMProvider.GEMINI_25:
+                # Try to import Gemini at runtime
+                try:
+                    import google.generativeai as genai
+                    self.get_logger().info('🔍 DEBUG: Gemini import successful at runtime')
+                except ImportError:
+                    self.get_logger().error('🔍 DEBUG: Gemini import failed at runtime')
+                    self.get_logger().info('🎯 Using computer vision simulation mode')
+                    self.llm_client = "simulation"
+                    return
+                if not self.gemini_api_key:
+                    self.get_logger().warn('� Gemini API key not provided, using STUB mode')
+                    self.llm_client = "gemini_stub"
+                    return
+                    
+                # Configure Gemini
+                genai.configure(api_key=self.gemini_api_key)
                 
-            elif self.llm_provider == LLMProvider.GEMINI_25:
-                self.get_logger().info('🔧 Google Gemini 2.5 client initialized (STUB)')
-                self.llm_client = "gemini_stub"
+                # Choose the right model
+                model_name = self.llm_model_version or "gemini-2.5-pro-vision"
+                if "flash" in model_name.lower():
+                    model_name = "gemini-2.5-flash"
+                elif "pro" in model_name.lower():
+                    model_name = "gemini-2.5-pro"
+                    
+                self.llm_client = genai.GenerativeModel(model_name)
+                self.get_logger().info(f'🔧 Gemini 2.5 client initialized with model: {model_name}')
+                self.get_logger().info(f'🔍 DEBUG: llm_client type: {type(self.llm_client)}')
                 
-            elif self.llm_provider == LLMProvider.CLAUDE_4_SONNET:
-                self.get_logger().info('🔧 Anthropic Claude 4 Sonnet client initialized (STUB)')
-                self.llm_client = "claude_stub"
+            elif self.llm_provider == LLMProvider.OPENAI_GPT41 and OPENAI_AVAILABLE:
+                if not self.openai_api_key:
+                    self.get_logger().warn('🔑 OpenAI API key not provided, using STUB mode')
+                    self.llm_client = "openai_stub"
+                    return
+                    
+                # Configure OpenAI
+                openai.api_key = self.openai_api_key
+                self.llm_client = openai
+                self.get_logger().info('🔧 OpenAI GPT-4.1 client initialized')
+                
+            elif self.llm_provider == LLMProvider.CLAUDE_4_SONNET and ANTHROPIC_AVAILABLE:
+                if not self.anthropic_api_key:
+                    self.get_logger().warn('� Anthropic API key not provided, using STUB mode')
+                    self.llm_client = "claude_stub"
+                    return
+                    
+                # Configure Claude
+                self.llm_client = anthropic.Anthropic(api_key=self.anthropic_api_key)
+                self.get_logger().info('🔧 Anthropic Claude 4 Sonnet client initialized')
                 
             else:
                 self.get_logger().info('🎯 Using computer vision simulation mode')
@@ -160,6 +237,7 @@ class LLMCameraController(Node):
                 
         except Exception as e:
             self.get_logger().error(f'LLM initialization error: {e}')
+            self.get_logger().warn('🔄 Falling back to stub mode')
             self.llm_provider = LLMProvider.SIMULATION
             self.llm_client = "simulation"
     
@@ -210,8 +288,14 @@ class LLMCameraController(Node):
         try:
             if self.llm_provider == LLMProvider.SIMULATION:
                 return self._analyze_scene_simulation(image, timestamp)
+            elif self.llm_provider == LLMProvider.GEMINI_25:
+                return self._analyze_scene_gemini(image, timestamp)
+            elif self.llm_provider == LLMProvider.OPENAI_GPT41:
+                return self._analyze_scene_openai(image, timestamp)
+            elif self.llm_provider == LLMProvider.CLAUDE_4_SONNET:
+                return self._analyze_scene_claude(image, timestamp)
             else:
-                return self._analyze_scene_llm_stub(image, timestamp)
+                return self._analyze_scene_simulation(image, timestamp)
                 
         except Exception as e:
             self.get_logger().error(f'Scene analysis error: {e}')
@@ -224,6 +308,205 @@ class LLMCameraController(Node):
                 "error": str(e)
             }
     
+    def _analyze_scene_gemini(self, image, timestamp):
+        """Analyze scene using Gemini 2.5 for robotics vision"""
+        try:
+            # Check if we have a real client or fallback to stub
+            self.get_logger().info(f'🔍 DEBUG: llm_client type in analysis: {type(self.llm_client)}')
+            self.get_logger().info(f'🔍 DEBUG: llm_client value: {self.llm_client}')
+            if isinstance(self.llm_client, str) and "stub" in self.llm_client:
+                return self._analyze_scene_llm_stub(image, timestamp)
+            
+            # Convert OpenCV image to PIL Image
+            height, width = image.shape[:2]
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            pil_image = PILImage.fromarray(rgb_image)
+            
+            # Resize image for API efficiency (keep aspect ratio)
+            max_size = 1024
+            if max(width, height) > max_size:
+                ratio = max_size / max(width, height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                pil_image = pil_image.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+                self.get_logger().info(f'📏 Resized image from {width}x{height} to {new_width}x{new_height}')
+            
+            # Gemini 2.5 robotics prompt based on the blog examples
+            robotics_prompt = f"""
+You are an intelligent camera controller for an Isaac Sim robotics environment. Analyze this scene and provide camera movement recommendations.
+
+SCENE ANALYSIS TASKS:
+1. Identify key objects, robots, and areas of interest in the scene
+2. Assess the current camera perspective and coverage
+3. Determine if the camera should move for better observation
+4. Consider robotics principles: object tracking, workspace visibility, safety zones
+
+CAMERA ACTIONS AVAILABLE:
+- move_closer: Move camera forward to get closer to objects
+- move_back: Move camera backward for wider view  
+- move_left: Move camera left
+- move_right: Move camera right
+- move_up: Move camera up for overhead perspective
+- move_down: Move camera down for ground-level view
+- rotate_left: Rotate camera left
+- rotate_right: Rotate camera right
+- tilt_up: Tilt camera up
+- tilt_down: Tilt camera down
+- hold_position: Stay in current position
+
+RESPONSE FORMAT (JSON):
+{{
+    "scene_description": "Brief description of what you see in the robotics scene",
+    "objects_detected": ["list", "of", "key", "objects"],
+    "recommended_action": "one_of_the_actions_above",
+    "reasoning": "Why you chose this action based on robotics principles",
+    "confidence": 0.0-1.0,
+    "priority_areas": ["areas", "that", "need", "better", "coverage"],
+    "safety_considerations": "Any safety or collision concerns"
+}}
+
+Focus on practical robotics applications: manipulation zones, robot workspace visibility, object tracking, and operational efficiency.
+"""
+
+            # Generate content with Gemini 2.5
+            response = self.llm_client.generate_content([robotics_prompt, pil_image])
+            
+            if not response.text:
+                raise Exception("Empty response from Gemini")
+            
+            # Parse JSON response
+            try:
+                # Clean the response text (remove markdown formatting if present)
+                response_text = response.text.strip()
+                if response_text.startswith('```json'):
+                    response_text = response_text[7:]
+                if response_text.endswith('```'):
+                    response_text = response_text[:-3]
+                response_text = response_text.strip()
+                
+                analysis_data = json.loads(response_text)
+                
+                # Structure the response according to our expected format
+                analysis = {
+                    "timestamp": timestamp,
+                    "provider": "gemini_2.5",
+                    "model": self._get_model_name(),
+                    "scene_description": analysis_data.get("scene_description", "Scene analyzed by Gemini 2.5"),
+                    "objects_detected": analysis_data.get("objects_detected", []),
+                    "action": analysis_data.get("recommended_action", "hold_position"),
+                    "reasoning": analysis_data.get("reasoning", "Gemini 2.5 robotics analysis"),
+                    "confidence": float(analysis_data.get("confidence", 0.7)),
+                    "priority_areas": analysis_data.get("priority_areas", []),
+                    "safety_considerations": analysis_data.get("safety_considerations", "None identified"),
+                    "raw_response": response.text
+                }
+                
+                self.get_logger().info(f'🧠 Gemini 2.5 Analysis: {analysis["action"]} - {analysis["reasoning"]}')
+                self.get_logger().info(f'🎯 Objects detected: {", ".join(analysis["objects_detected"])}')
+                
+                return analysis
+                
+            except json.JSONDecodeError as e:
+                self.get_logger().error(f'Failed to parse Gemini JSON response: {e}')
+                self.get_logger().error(f'Raw response: {response.text}')
+                
+                # Fallback: extract action from text if JSON parsing fails
+                action = "hold_position"
+                if "move_closer" in response.text.lower():
+                    action = "move_closer"
+                elif "move_back" in response.text.lower():
+                    action = "move_back"
+                elif "move_up" in response.text.lower():
+                    action = "move_up"
+                elif "rotate_left" in response.text.lower():
+                    action = "rotate_left"
+                elif "rotate_right" in response.text.lower():
+                    action = "rotate_right"
+                
+                return {
+                    "timestamp": timestamp,
+                    "provider": "gemini_2.5",
+                    "model": self._get_model_name(),
+                    "scene_description": "Gemini 2.5 analysis (text parsing fallback)",
+                    "action": action,
+                    "reasoning": f"Extracted from text response: {response.text[:100]}...",
+                    "confidence": 0.6,
+                    "raw_response": response.text,
+                    "parse_error": str(e)
+                }
+                
+        except Exception as e:
+            self.get_logger().error(f'Gemini analysis error: {e}')
+            # Fallback to stub mode
+            return self._analyze_scene_llm_stub(image, timestamp)
+    
+    def _analyze_scene_openai(self, image, timestamp):
+        """Analyze scene using OpenAI GPT-4.1 Vision"""
+        try:
+            # Check if we have a real client or fallback to stub
+            if isinstance(self.llm_client, str) and "stub" in self.llm_client:
+                return self._analyze_scene_llm_stub(image, timestamp)
+            
+            # Convert image to base64 for OpenAI API
+            height, width = image.shape[:2]
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            pil_image = PILImage.fromarray(rgb_image)
+            
+            # Resize for efficiency
+            max_size = 1024
+            if max(width, height) > max_size:
+                ratio = max_size / max(width, height)
+                new_size = (int(width * ratio), int(height * ratio))
+                pil_image = pil_image.resize(new_size, PILImage.Resampling.LANCZOS)
+            
+            # Convert to base64
+            buffer = io.BytesIO()
+            pil_image.save(buffer, format='JPEG')
+            image_b64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            # OpenAI Vision API call (placeholder - would need actual implementation)
+            analysis = {
+                "timestamp": timestamp,
+                "provider": "openai_gpt4.1",
+                "model": self._get_model_name(),
+                "scene_description": "OpenAI GPT-4.1 Vision analysis (STUB - implement with actual API)",
+                "action": "move_closer",
+                "reasoning": "OpenAI analysis suggests closer inspection",
+                "confidence": 0.8
+            }
+            
+            self.get_logger().info(f'🧠 OpenAI Analysis (STUB): {analysis["action"]} - {analysis["reasoning"]}')
+            return analysis
+            
+        except Exception as e:
+            self.get_logger().error(f'OpenAI analysis error: {e}')
+            return self._analyze_scene_llm_stub(image, timestamp)
+    
+    def _analyze_scene_claude(self, image, timestamp):
+        """Analyze scene using Anthropic Claude 4 Sonnet"""
+        try:
+            # Check if we have a real client or fallback to stub
+            if isinstance(self.llm_client, str) and "stub" in self.llm_client:
+                return self._analyze_scene_llm_stub(image, timestamp)
+            
+            # Claude vision implementation (placeholder - would need actual implementation)
+            analysis = {
+                "timestamp": timestamp,
+                "provider": "claude_4_sonnet",
+                "model": self._get_model_name(),
+                "scene_description": "Claude 4 Sonnet analysis (STUB - implement with actual API)",
+                "action": "move_up",
+                "reasoning": "Claude analysis suggests elevated perspective",
+                "confidence": 0.8
+            }
+            
+            self.get_logger().info(f'🧠 Claude Analysis (STUB): {analysis["action"]} - {analysis["reasoning"]}')
+            return analysis
+            
+        except Exception as e:
+            self.get_logger().error(f'Claude analysis error: {e}')
+            return self._analyze_scene_llm_stub(image, timestamp)
+
     def _analyze_scene_llm_stub(self, image, timestamp):
         """STUB: Analyze scene using LLM - placeholder implementation"""
         height, width = image.shape[:2]

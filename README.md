@@ -24,7 +24,7 @@ python3 camera_cli.py position --x 0 --y 0 --z 10
 ## 🎯 Key Features
 
 - **🎮 Intuitive Camera Control**: Move, rotate, and position camera with simple commands.
-- **🧠 LLM-Powered Camera**: Multiple LLM providers (OpenAI GPT-4.1, Gemini 2.5, Claude 4 Sonnet).
+- **🧠 LLM-Powered Camera**: Multiple LLM providers with **real Gemini 2.5 implementation** for robotics vision analysis.
 - **🚀 ROS2 Native**: Controlled via standard ROS2 launch files and topics.
 - **📊 Real-time Monitoring**: System status, scenario validation, and health checking.
 - **🔄 Live Data Streaming**: RGB, depth, camera info via ROS2 topics.
@@ -39,6 +39,37 @@ python3 camera_cli.py position --x 0 --y 0 --z 10
 
 **Important Note**: There is a known Python version compatibility issue between Isaac Sim (Python 3.11) and ROS2 Jazzy (Python 3.12). While the ROS2 bridge extension loads in Isaac Sim, full ROS2 topic communication may be limited. The current system works around this by running the LLM camera controller as a separate ROS2 node outside of Isaac Sim.
 
+### Environment Setup
+
+1.  **Configure API Keys** (Choose one method):
+
+    **Option A: Using .env file (Recommended)**:
+    ```bash
+    # Copy the example file
+    cp .env.example .env
+    
+    # Edit .env file with your API keys
+    nano .env
+    
+    # Add your keys:
+    GEMINI_API_KEY=your_gemini_api_key_here
+    OPENAI_API_KEY=your_openai_api_key_here
+    ANTHROPIC_API_KEY=your_anthropic_api_key_here
+    ```
+
+    **Option B: Environment variables**:
+    ```bash
+    export GEMINI_API_KEY='your_gemini_api_key_here'
+    export OPENAI_API_KEY='your_openai_api_key_here'
+    ```
+
+    **Option C: Launch parameters** (as shown below)
+
+2.  **Run Environment Setup Helper**:
+    ```bash
+    python3 setup_environment.py
+    ```
+
 ### Launch Instructions
 
 1.  **Build and Source the Workspace**:
@@ -49,20 +80,30 @@ python3 camera_cli.py position --x 0 --y 0 --z 10
     ```
 
 2.  **Launch the LLM Camera Controller**:
-    This is the primary method to run the system. You can choose your desired LLM provider.
+    This is the primary method to run the system. API keys can be provided via .env file, environment variables, or launch parameters.
 
     *   **Simulation Mode (Default)**:
         ```bash
         ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=simulation
         ```
 
-    *   **OpenAI GPT-4.1**:
+    *   **Google Gemini 2.5** (REAL IMPLEMENTATION):
         ```bash
-        ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=openai_gpt4.1 openai_api_key:='your-openai-api-key'
+        # Using .env file (recommended) - just add GEMINI_API_KEY to .env
+        ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=gemini_2.5
+        
+        # Or with explicit API key parameter
+        ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=gemini_2.5 gemini_api_key:='your-gemini-api-key'
         ```
 
-    *   **Google Gemini 2.5**:
+    *   **OpenAI GPT-4.1**:
         ```bash
+        # Using .env file or explicit parameter
+        ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=openai_gpt4.1 openai_api_key:='your-openai-api-key'
+        ```
+        ```bash
+        # Get your API key from: https://aistudio.google.com/app/apikey
+        export GEMINI_API_KEY='your-gemini-api-key'
         ros2 launch isaac_test llm_camera_controller_simple.launch.py llm_provider:=gemini_2.5 gemini_api_key:='your-gemini-api-key'
         ```
 

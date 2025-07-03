@@ -1,11 +1,16 @@
 # Isaac Sim 5.0 ROS2 Camera Control with LLM Support
 # Core dependencies for LLM integration
 
+# Environment variable management
+python-dotenv>=1.0.0
+
 # OpenAI API
 openai>=1.0.0
 
 # Google Gemini API  
-google-generativeai>=0.3.0
+google-generativeai>=0.8.0
+google-ai-generativelanguage>=0.6.0
+pillow>=10.0.0
 
 # Anthropic Claude API
 anthropic>=0.7.0

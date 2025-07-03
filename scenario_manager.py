@@ -30,8 +30,18 @@ class ScenarioManager:
         
         self.log_info("🚀 Initializing Scenario Manager...")
         
-        # Asset definitions
-        self.available_scenes = {
+        # Load local assets first, fall back to hardcoded assets
+        self.load_asset_configurations()
+        
+        self.log_info(f"📋 Loaded {len(self.available_scenes)} scenes, {len(self.available_robots)} robots, {len(self.available_props)} props")
+        self.log_info(f"🎬 Available scenes: {list(self.available_scenes.keys())}")
+        
+    def load_asset_configurations(self):
+        """Load asset configurations, prioritizing local downloaded assets"""
+        local_config_path = Path("/home/kimate/isaac_assets/local_scenario_config.json")
+        
+        # Default hardcoded assets (fallback)
+        default_scenes = {
             "warehouse": {
                 "path": "/Isaac/Environments/Simple_Warehouse/warehouse.usd",
                 "description": "Industrial warehouse environment with shelving and storage areas"
@@ -50,16 +60,10 @@ class ScenarioManager:
             }
         }
         
-        self.available_robots = {
+        default_robots = {
             "carter": {
                 "path": "/Isaac/Robots/Carter/carter_v1.usd",
                 "description": "NVIDIA Carter autonomous mobile robot",
-                "ros_enabled": True,
-                "default_position": [0, 0, 0]
-            },
-            "carter_2": {
-                "path": "/Isaac/Robots/Carter/carter_v2.usd", 
-                "description": "NVIDIA Carter 2.0 autonomous mobile robot",
                 "ros_enabled": True,
                 "default_position": [0, 0, 0]
             },
@@ -71,26 +75,61 @@ class ScenarioManager:
             },
             "ur10": {
                 "path": "/Isaac/Robots/UniversalRobots/ur10/ur10.usd",
-                "description": "Universal Robots UR10 industrial arm",
+                "description": "Universal Robots UR10 collaborative robot",
                 "ros_enabled": True,
                 "default_position": [0, 0, 0]
             }
         }
         
-        self.available_props = {
-            "cones": {
-                "path": "/Isaac/Props/Cones/traffic_cone.usd",
-                "description": "Traffic cone for navigation obstacles"
-            },
-            "boxes": {
+        default_props = {
+            "basic_block": {
                 "path": "/Isaac/Props/Blocks/basic_block.usd",
-                "description": "Basic cubic blocks"
-            },
-            "barrels": {
-                "path": "/Isaac/Props/Barrels/barrel.usd", 
-                "description": "Industrial barrels"
+                "description": "Basic geometric block for manipulation"
             }
         }
+        
+        # Try to load local config first
+        if local_config_path.exists():
+            try:
+                with open(local_config_path, 'r') as f:
+                    local_config = json.load(f)
+                
+                self.available_scenes = local_config.get("available_scenes", {})
+                self.available_robots = local_config.get("available_robots", {})
+                self.available_props = local_config.get("available_props", {})
+                
+                self.log_info(f"✅ Loaded local asset configuration from {local_config_path}")
+                self.log_info(f"   Local scenes: {len(self.available_scenes)} available")
+                self.log_info(f"   Local robots: {len(self.available_robots)} available")
+                self.log_info(f"   Local props: {len(self.available_props)} available")
+                
+                # Merge with defaults for any missing assets
+                for scene_name, scene_info in default_scenes.items():
+                    if scene_name not in self.available_scenes:
+                        self.available_scenes[scene_name] = scene_info
+                        self.log_info(f"   Added fallback scene: {scene_name}")
+                
+                for robot_name, robot_info in default_robots.items():
+                    if robot_name not in self.available_robots:
+                        self.available_robots[robot_name] = robot_info
+                        self.log_info(f"   Added fallback robot: {robot_name}")
+                
+                for prop_name, prop_info in default_props.items():
+                    if prop_name not in self.available_props:
+                        self.available_props[prop_name] = prop_info
+                        self.log_info(f"   Added fallback prop: {prop_name}")
+                        
+            except Exception as e:
+                self.log_warning(f"⚠️ Failed to load local config {local_config_path}: {e}")
+                self.log_info("📋 Using default hardcoded assets")
+                self.available_scenes = default_scenes
+                self.available_robots = default_robots
+                self.available_props = default_props
+        else:
+            self.log_info(f"📋 Local config not found at {local_config_path}, using defaults")
+            self.available_scenes = default_scenes
+            self.available_robots = default_robots
+            self.available_props = default_props
         
         self.log_info(f"✅ Scenario Manager initialized successfully")
         self.log_info(f"   Available scenes: {len(self.available_scenes)}")
@@ -204,15 +243,41 @@ class ScenarioManager:
             
             self.log_info(f"🔍 Parsing request: '{user_request}'")
             
-            # Parse scene type
+            # Parse scene type - prioritize exact scene name matches first
             scene_found = False
+            
+            # First pass: Look for exact scene name matches
             for scene_name, scene_info in self.available_scenes.items():
-                keywords = scene_info["description"].lower().split()
-                if scene_name in request_lower or any(keyword in request_lower for keyword in keywords):
+                scene_patterns = [
+                    scene_name,
+                    scene_name.replace("_", " "),
+                    scene_name.replace("_", "-")
+                ]
+                if any(pattern in request_lower for pattern in scene_patterns):
                     scenario["scene"] = scene_name
                     scene_found = True
-                    self.log_info(f"🏗️  Scene detected: {scene_name}")
+                    self.log_info(f"🏗️  Scene detected: {scene_name} (exact match)")
                     break
+            
+            # Second pass: Look for description keywords only if no exact match
+            if not scene_found:
+                for scene_name, scene_info in self.available_scenes.items():
+                    # Use specific keywords, avoid generic ones like "environment"
+                    specific_keywords = []
+                    if scene_name == "warehouse":
+                        specific_keywords = ["warehouse", "industrial", "shelving", "storage"]
+                    elif scene_name == "simple_room":
+                        specific_keywords = ["room", "indoor", "basic"]
+                    elif scene_name == "office":
+                        specific_keywords = ["office", "furniture", "modern"]
+                    elif scene_name == "grid_room":
+                        specific_keywords = ["grid", "navigation", "testing"]
+                    
+                    if any(keyword in request_lower for keyword in specific_keywords):
+                        scenario["scene"] = scene_name
+                        scene_found = True
+                        self.log_info(f"🏗️  Scene detected: {scene_name} (keyword match)")
+                        break
             
             # Default to simple_room if no scene specified
             if not scenario["scene"]:
@@ -232,17 +297,43 @@ class ScenarioManager:
                 
                 if any(pattern in request_lower for pattern in robot_patterns):
                     ros_enabled = ("ros" in request_lower or "ros2" in request_lower) and robot_info["ros_enabled"]
+                    
+                    # Try to parse coordinates for this robot
+                    position = robot_info["default_position"].copy()
+                    
+                    # Look for coordinate patterns near the robot name
+                    import re
+                    coord_patterns = [
+                        rf"{robot_name}.*?(?:at|positioned|located).*?\(([^)]+)\)",
+                        rf"(?:at|positioned|located).*?\(([^)]+)\).*?{robot_name}",
+                        rf"{robot_name}.*?coordinates.*?\(([^)]+)\)",
+                        rf"coordinates.*?\(([^)]+)\).*?{robot_name}"
+                    ]
+                    
+                    for pattern in coord_patterns:
+                        match = re.search(pattern, user_request, re.IGNORECASE)
+                        if match:
+                            try:
+                                coords_str = match.group(1)
+                                coords = [float(x.strip()) for x in coords_str.split(',')]
+                                if len(coords) >= 2:
+                                    position = coords[:3] if len(coords) >= 3 else coords + [0]
+                                    self.log_info(f"📍 Parsed coordinates for {robot_name}: {position}")
+                                    break
+                            except (ValueError, IndexError):
+                                continue
+                    
                     robot_config = {
                         "type": robot_name,
                         "name": f"{robot_name}_robot",
-                        "position": robot_info["default_position"].copy(),
+                        "position": position,
                         "ros_enabled": ros_enabled
                     }
                     scenario["robots"].append(robot_config)
                     robots_found += 1
                     
                     ros_status = "with ROS2" if ros_enabled else "without ROS2"
-                    self.log_info(f"🤖 Robot detected: {robot_name} {ros_status}")
+                    self.log_info(f"🤖 Robot detected: {robot_name} {ros_status} at {position}")
             
             if robots_found == 0:
                 self.log_warning("No robots detected in request")
@@ -273,11 +364,37 @@ class ScenarioManager:
                 "far view": [10, 10, 5]
             }
             
-            for keyword, position in camera_keywords.items():
-                if keyword in request_lower:
-                    scenario["camera_position"] = position
-                    self.log_info(f"📷 Camera position: {keyword} -> {position}")
-                    break
+            # First check for specific coordinate patterns for camera
+            import re
+            camera_coord_patterns = [
+                r"camera.*?(?:at|position|start).*?\(([^)]+)\)",
+                r"(?:camera|set).*?position.*?\(([^)]+)\)",
+                r"start.*?at.*?position.*?\(([^)]+)\)"
+            ]
+            
+            camera_found = False
+            for pattern in camera_coord_patterns:
+                match = re.search(pattern, user_request, re.IGNORECASE)
+                if match:
+                    try:
+                        coords_str = match.group(1)
+                        coords = [float(x.strip()) for x in coords_str.split(',')]
+                        if len(coords) >= 2:
+                            camera_position = coords[:3] if len(coords) >= 3 else coords + [2]  # Default height 2
+                            scenario["camera_position"] = camera_position
+                            self.log_info(f"📷 Camera coordinates parsed: {camera_position}")
+                            camera_found = True
+                            break
+                    except (ValueError, IndexError):
+                        continue
+            
+            # If no coordinates found, check for keyword positions
+            if not camera_found:
+                for keyword, position in camera_keywords.items():
+                    if keyword in request_lower:
+                        scenario["camera_position"] = position
+                        self.log_info(f"📷 Camera position: {keyword} -> {position}")
+                        break
             
             self.add_processing_step("parse_request", "completed", {
                 "scene": scenario["scene"],
